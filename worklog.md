@@ -111,9 +111,97 @@ user message → ROUTER ─┬─ schema ─────────────
    next feature.
 
 ## Recommended Next-phase Priorities
-1. Verify ML agent end-to-end (cluster + forecast prompts).
-2. Add session reload from the canvas history (session picker on the connect screen).
-3. Add export-to-CSV / export-chart-PNG buttons on canvas objects.
-4. Add a "regenerate" button on assistant messages.
+1. ~~Verify ML agent end-to-end (cluster + forecast prompts).~~ ✅ Done — both forecast and k-means verified.
+2. ~~Add session reload from the canvas history (session picker on the connect screen).~~ ✅ Done — "Recent sessions" on connection screen.
+3. ~~Add export-to-CSV / export-chart-PNG buttons on canvas objects.~~ ✅ Done — CSV export on tables.
+4. ~~Add a "regenerate" button on assistant messages.~~ ✅ Done — regenerate + copy buttons.
 5. Tune the viz agent prompt to better honor the requested chart type (e.g.
    "distribution of totals" should bin the numeric column, not group by status).
+
+---
+
+## Round 2 — Cron-triggered QA & Feature Advancement (2025-07-04)
+
+### QA Findings & Bugs Fixed
+1. **EDA agent received only 1 row** (critical): When the user asked for a
+   "statistical summary", the SQL agent generated an aggregate query
+   (`SELECT COUNT(*), AVG(...)...`) because it didn't know EDA would also
+   run. The EDA agent then profiled a single aggregate row — useless.
+   **Fix**: Pass the router's `routedAgents` list to `runSqlAgent()` as
+   `downstreamAgents`. Added rule 9 to the SQL agent's system prompt:
+   "If EDA will run, return RAW rows — do NOT use GROUP BY, COUNT, AVG. If
+   ML will run, return RAW numeric features — do NOT use CASE WHEN or
+   pre-bucket." The orchestrator now passes `route.agents.filter(a => a !==
+   'sql')` to the SQL agent. **Verified**: "Profile the orders table" now
+   profiles 500 raw rows (was 1).
+
+2. **SQL agent pre-clustered with CASE WHEN** for ML requests: When the user
+   asked "Cluster products by price and stock", the SQL agent generated
+   `CASE WHEN price < 50 AND stock < 100 THEN 'Low Price, Low Stock'...`
+   instead of returning raw `price, stock` columns for the ML agent.
+   **Fix**: Same downstream-agents rule above. **Verified**: SQL now returns
+   `SELECT id, name, category_id, price, cost, stock, discontinued FROM
+   products LIMIT 500` and the ML agent runs k-means on the raw features.
+
+3. **"Set objects not supported" React warning**: A recurring Next.js 16 /
+   React 19 dev-mode serialization warning from `next/font`. Non-breaking
+   (page renders 200). Left as-is — it's an internal React dev warning, not
+   a functional bug.
+
+### New Features Added
+1. **CSV export** on table canvas objects: A "CSV" button in the table header
+   downloads the full result set as a properly-quoted CSV file. Verified
+   end-to-end — "Exported CSV" toast appears on click.
+
+2. **Copy SQL** button on SQL canvas objects: A copy icon in the SQL header
+   copies the query to the clipboard.
+
+3. **Copy message** button on assistant chat messages: Appears on hover
+   below any completed assistant reply. Shows "Copied" confirmation for 2s.
+
+4. **Regenerate** button on the last assistant message: Removes the last
+   assistant reply and re-runs the agent turn with the preceding user
+   question. Uses `popLastAssistant()` store action. Verified working.
+
+5. **Session reload** (Recent sessions): The connection screen now shows a
+   "Recent sessions" section listing up to 5 previous connected sessions
+   with label, dialect badge, Zen badge, time-ago, and delete button.
+   Clicking reopens the session with full message + canvas history. Uses
+   `loadSession()` store action + GET `/api/sessions/:id`.
+
+### Visual Polish
+1. **Animated thinking dots**: Replaced the static "thinking…" text with
+   three bouncing dots (`.think-dot` CSS animation) for a more alive feel.
+2. **Connection status indicator**: Added a pulsing emerald dot in the top
+   bar next to the Quill logo (uses Tailwind `animate-ping`).
+3. **Null-percentage bars in EDA**: The nulls column now shows a mini bar
+   (`.null-bar` + `.null-bar-fill`) colored emerald/amber/destructive
+   based on null percentage.
+4. **Table row hover**: Added `hover:bg-accent/30` to table rows.
+5. **Canvas card headers**: Refined table and SQL headers with a subtle
+   `bg-muted/20` background and action buttons in a flex row.
+6. **Shimmer utility**: Added `.shimmer` CSS class for skeleton loading
+   (available for future use).
+
+### Files Modified This Round
+- `src/lib/agents/sql.ts` — Added `downstreamAgents` parameter + rule 9.
+- `src/lib/agents/orchestrator.ts` — Pass `route.agents` to `runSqlAgent`.
+- `src/lib/store.ts` — Added `loadSession()` and `popLastAssistant()`.
+- `src/components/canvas/canvas-table.tsx` — CSV export button + row hover.
+- `src/components/canvas/canvas-sql.tsx` — Copy SQL button + header redesign.
+- `src/components/canvas/canvas-eda.tsx` — Null-percentage visual bars.
+- `src/components/connection-screen.tsx` — Recent sessions section.
+- `src/components/chat-pane.tsx` — Regenerate + Copy buttons, thinking dots.
+- `src/components/app-shell.tsx` — Connection status pulse dot.
+- `src/app/globals.css` — think-dot, shimmer, null-bar animations.
+
+### Remaining Next-phase Priorities
+1. Tune the viz agent prompt to better honor requested chart types (e.g.
+   "distribution of totals" should bin the numeric column, not group by
+   status).
+2. Add chart PNG/SVG export on chart canvas objects.
+3. Add client-side throttling/retry for 429 rate-limit errors.
+4. Add a "stop generating" button to abort streaming mid-turn.
+5. Improve the chart agent to handle "distribution" requests by computing
+   bins server-side rather than relying on Vega-Lite's binning transform.
+

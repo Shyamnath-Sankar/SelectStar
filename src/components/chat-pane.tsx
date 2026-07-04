@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, Loader2, User, Sparkles, RotateCcw, AlertCircle, Database } from "lucide-react";
+import { Send, Loader2, User, Sparkles, RotateCcw, AlertCircle, Database, Copy, RefreshCw, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession, type ChatMessage } from "@/lib/store";
@@ -25,7 +25,7 @@ export function ChatPane() {
   const {
     sessionId, messages, sending, zenMode, schema, suggestedQuestions,
     addMessage, appendToMessage, addStepToMessage, finalizeMessage,
-    setSending, addCanvasObject, reset,
+    setSending, addCanvasObject, reset, popLastAssistant,
   } = useSession();
   const sessionLabel = useSession((s) => s.label);
   const [input, setInput] = useState("");
@@ -70,6 +70,32 @@ export function ChatPane() {
     });
   }
 
+  async function regenerate() {
+    if (!sessionId || sending) return;
+    const userContent = popLastAssistant();
+    if (!userContent) return;
+    // Re-run the agent turn without adding a new user message (the user
+    // message is already in the DB from the original turn).
+    const assistantId = crypto.randomUUID();
+    addMessage({ id: assistantId, role: "assistant", content: "", streaming: true, steps: [] });
+    setSending(true);
+    await streamChat(sessionId, userContent, {
+      onStep: (agent, label) => addStepToMessage(assistantId, { agent, label }),
+      onSql: () => {},
+      onCanvas: (obj) => addCanvasObject(obj),
+      onToken: (delta) => appendToMessage(assistantId, delta),
+      onReplyDone: () => finalizeMessage(assistantId),
+      onError: (message) => {
+        appendToMessage(assistantId, `⚠️ ${message}`);
+        finalizeMessage(assistantId, { isError: true });
+      },
+      onDone: () => {
+        finalizeMessage(assistantId);
+        setSending(false);
+      },
+    });
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -96,8 +122,13 @@ export function ChatPane() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
         {hasMessages ? (
           <AnimatePresence initial={false}>
-            {messages.map((m) => (
-              <MessageBubble key={m.id} message={m} />
+            {messages.map((m, i) => (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                isLastAssistant={i === messages.length - 1 && m.role === "assistant" && !m.streaming}
+                onRegenerate={regenerate}
+              />
             ))}
           </AnimatePresence>
         ) : (
@@ -139,14 +170,31 @@ export function ChatPane() {
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  isLastAssistant,
+  onRegenerate,
+}: {
+  message: ChatMessage;
+  isLastAssistant?: boolean;
+  onRegenerate?: () => void;
+}) {
   const isUser = message.role === "user";
+  const [copied, setCopied] = useState(false);
+
+  function copyMessage() {
+    navigator.clipboard.writeText(message.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
-      className={cn("flex gap-2.5", isUser && "flex-row-reverse")}
+      className={cn("flex gap-2.5 group", isUser && "flex-row-reverse")}
     >
       <div className={cn(
         "h-7 w-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5",
@@ -188,9 +236,37 @@ function MessageBubble({ message }: { message: ChatMessage }) {
               {message.streaming && <span className="streaming-caret" />}
             </div>
           ) : message.streaming ? (
-            <span className="text-muted-foreground text-xs italic">thinking…</span>
+            <span className="inline-flex items-center gap-1 text-muted-foreground text-xs italic">
+              thinking
+              <span className="inline-flex items-center gap-0.5 not-italic">
+                <span className="think-dot" />
+                <span className="think-dot" />
+                <span className="think-dot" />
+              </span>
+            </span>
           ) : null}
         </div>
+        {/* Action bar for completed assistant messages */}
+        {!isUser && !message.streaming && message.content && (
+          <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={copyMessage}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+            >
+              {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+            {isLastAssistant && onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Regenerate
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </motion.div>
   );

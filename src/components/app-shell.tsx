@@ -79,6 +79,13 @@ export function AppShell() {
               <Badge variant="outline" className="text-[9px] h-4 px-1 uppercase tracking-wide">{dialect}</Badge>
             </div>
           </div>
+          {/* Connection status dot */}
+          <div className="flex items-center gap-1 ml-1" title="Connected">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            </span>
+          </div>
         </div>
 
         <div className="flex-1" />

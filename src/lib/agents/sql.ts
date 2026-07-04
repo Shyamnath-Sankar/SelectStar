@@ -13,7 +13,7 @@
  *    (EDA/viz/ML) rather than interpreting the data itself.
  */
 import { completeJson, complete } from "@/lib/llm";
-import type { AgentState, CanvasObject, SqlCanvasObject, PendingWriteCanvasObject, TableCanvasObject } from "@/lib/types";
+import type { AgentState, AgentName, CanvasObject, SqlCanvasObject, PendingWriteCanvasObject, TableCanvasObject } from "@/lib/types";
 import { renderRelevantSchema } from "./schema-utils";
 import { getConnection, isWriteStatement, applyRowLimit } from "@/lib/db-connection";
 import { storeFrame } from "@/lib/frame-cache";
@@ -41,9 +41,14 @@ Hard rules:
 5. Use only standard SQL compatible with the dialect given. Quote identifiers only when necessary.
 6. Reference real table and column names from the provided schema only. Never invent names.
 7. For "top N" questions use ORDER BY ... LIMIT N. For "breakdown" use GROUP BY.
-8. Keep queries readable; don't add unnecessary subqueries.`;
+8. Keep queries readable; don't add unnecessary subqueries.
+9. DOWNSTREAM AGENTS RULE — critically important:
+   - If "eda" (statistical profiling) will run: return RAW rows with the original numeric/text columns, NOT pre-aggregated summary rows. The EDA agent computes its own statistics. Do NOT use GROUP BY, COUNT, AVG, etc. — just SELECT the relevant columns.
+   - If "viz" (charting) will run: return rows suitable for plotting — include the dimensional columns (categories, dates) and the measure columns as separate fields. Do NOT pre-format or concatenate values.
+   - If "ml" (modeling) will run: return RAW numeric feature columns. Do NOT use CASE WHEN, bucketing, or text-label assignment to pre-cluster or pre-classify data — the ML agent does that itself. Just SELECT the raw columns the model needs.
+   - If ONLY "sql" runs (no downstream agents): you may use aggregates, GROUP BY, etc. as appropriate to answer the question directly.`;
 
-export async function runSqlAgent(state: AgentState): Promise<SqlAgentOutput> {
+export async function runSqlAgent(state: AgentState, downstreamAgents: AgentName[] = []): Promise<SqlAgentOutput> {
   const snap = state.schemaSnapshot;
   if (!snap) {
     return { sql: "", isWrite: false, error: "No schema is available. Connect to a database first.", canvas: [] };
@@ -51,6 +56,11 @@ export async function runSqlAgent(state: AgentState): Promise<SqlAgentOutput> {
 
   const schemaText = renderRelevantSchema(snap, state.userInput, 10);
   const history = state.messages.slice(-4).map((m) => `${m.role}: ${m.content.slice(0, 200)}`).join("\n");
+
+  const downstream = downstreamAgents.filter((a) => a !== "sql");
+  const downstreamNote = downstream.length
+    ? `\nDOWNSTREAM AGENTS that will process this query result: ${downstream.join(", ")}. Per rule 9, return RAW rows suitable for these agents — do NOT pre-aggregate, pre-bucket, or pre-classify.`
+    : "\nNo downstream agents will process this result — you may use aggregates or GROUP BY as appropriate.";
 
   let sql = "";
   let intent: "select" | "aggregate" | "write" = "select";
@@ -61,7 +71,7 @@ Schema (most relevant tables):
 ${schemaText}
 
 Recent conversation:
-${history || "(none)"}
+${history || "(none)"}${downstreamNote}
 
 User question:
 """${state.userInput}"""

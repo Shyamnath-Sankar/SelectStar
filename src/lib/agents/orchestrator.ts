@@ -86,7 +86,10 @@ export async function runTurn(
   let sqlRanSelect = false;
   if (route.agents.includes("sql")) {
     cb.emit({ type: "step", agent: "sql", label: "Writing a SQL query…" });
-    const out = await runSqlAgent(state);
+    // Pass the downstream agents so the SQL agent knows whether to return
+    // raw rows (for EDA/viz/ML) or may use aggregates (sql-only turns).
+    const downstream = route.agents.filter((a) => a !== "sql");
+    const out = await runSqlAgent(state, downstream);
     if (out.error && !out.pending) {
       agentSummaries.push({ agent: "sql", summary: `SQL failed: ${out.error}` });
     } else if (out.pending) {

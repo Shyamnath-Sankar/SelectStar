@@ -63,6 +63,17 @@ interface SessionStore {
     suggestedQuestions: string[];
   }) => void;
   reset: () => void;
+  loadSession: (data: {
+    sessionId: string;
+    label: string;
+    dialect: string;
+    schema: SchemaSnapshot | null;
+    canWrite: boolean;
+    zenMode: boolean;
+    suggestedQuestions: string[];
+    messages: ChatMessage[];
+    canvas: CanvasObject[];
+  }) => void;
   setZenMode: (v: boolean) => void;
   addMessage: (m: ChatMessage) => void;
   appendToMessage: (id: string, delta: string) => void;
@@ -71,6 +82,8 @@ interface SessionStore {
   finalizeMessage: (id: string, opts?: { isError?: boolean }) => void;
   setSending: (v: boolean) => void;
   addCanvasObject: (obj: CanvasObject) => void;
+  /** Remove the last assistant message (for regenerate). Returns the preceding user message content, or null. */
+  popLastAssistant: () => string | null;
   addPendingWrite: (pw: PendingWriteState) => void;
   resolvePendingWrite: (pendingId: string, status: PendingWriteState["status"], rowsAffected?: number, error?: string) => void;
   setAuditCount: (n: number) => void;
@@ -124,6 +137,21 @@ export const useSession = create<SessionStore>((set) => ({
       canvas: [],
       pendingWrites: [],
     }),
+  loadSession: (data) =>
+    set({
+      sessionId: data.sessionId,
+      label: data.label,
+      dialect: data.dialect,
+      schema: data.schema,
+      canWrite: data.canWrite,
+      zenMode: data.zenMode,
+      connecting: false,
+      connectError: null,
+      suggestedQuestions: data.suggestedQuestions,
+      messages: data.messages,
+      canvas: data.canvas,
+      pendingWrites: [],
+    }),
   setZenMode: (v) => set({ zenMode: v }),
   addMessage: (m) =>
     set((s) => ({ messages: [...s.messages, m], streamingId: m.streaming ? m.id : s.streamingId })),
@@ -148,6 +176,24 @@ export const useSession = create<SessionStore>((set) => ({
     })),
   setSending: (v) => set({ sending: v }),
   addCanvasObject: (obj) => set((s) => ({ canvas: [...s.canvas, obj] })),
+  popLastAssistant: () => {
+    let userContent: string | null = null;
+    set((s) => {
+      // Find the last assistant message index.
+      const lastAssistantIdx = [...s.messages].reverse().findIndex((m) => m.role === "assistant");
+      if (lastAssistantIdx === -1) return s;
+      const idx = s.messages.length - 1 - lastAssistantIdx;
+      // Find the preceding user message.
+      for (let i = idx - 1; i >= 0; i--) {
+        if (s.messages[i].role === "user") {
+          userContent = s.messages[i].content;
+          break;
+        }
+      }
+      return { messages: s.messages.slice(0, idx) };
+    });
+    return userContent;
+  },
   addPendingWrite: (pw) => set((s) => ({ pendingWrites: [...s.pendingWrites, pw] })),
   resolvePendingWrite: (pendingId, status, rowsAffected, error) =>
     set((s) => ({

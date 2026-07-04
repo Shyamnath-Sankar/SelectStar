@@ -34,7 +34,15 @@ export function CanvasEda({ obj }: { obj: EdaSummaryCanvasObject }) {
                   <td className="px-3 py-2 font-mono font-medium align-top">{c.name}</td>
                   <td className="px-3 py-2 text-muted-foreground align-top">{c.dtype}</td>
                   <td className={cn("px-3 py-2 text-right tabular-nums align-top", nullPctClass)}>
-                    {c.nullPct.toFixed(1)}%
+                    <div className="flex flex-col items-end gap-1">
+                      <span>{c.nullPct.toFixed(1)}%</span>
+                      <div className="null-bar w-12">
+                        <div
+                          className={cn("null-bar-fill", nullBarColor(c.nullPct))}
+                          style={{ width: `${Math.min(100, c.nullPct)}%` }}
+                        />
+                      </div>
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums align-top">{c.unique.toLocaleString()}</td>
                   <td className="px-3 py-2 font-mono tabular-nums align-top">
@@ -89,4 +97,10 @@ function fmt(x: number | null | undefined): string {
   if (x === null || x === undefined || Number.isNaN(x)) return "—";
   if (Math.abs(x) >= 1000) return Math.round(x).toLocaleString();
   return Math.round(x * 1000) / 1000 + "";
+}
+
+function nullBarColor(pct: number): string {
+  if (pct > 20) return "bg-destructive";
+  if (pct > 5) return "bg-amber-500";
+  return "bg-emerald-500";
 }
