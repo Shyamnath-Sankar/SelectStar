@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import { Database, Shield, ShieldAlert, RefreshCw, ListTree, Loader2, ScrollText, MessageSquare, LayoutDashboard } from "lucide-react";
+import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -70,12 +71,10 @@ export function AppShell() {
       {/* Top bar */}
       <header className="flex items-center gap-3 h-12 px-3 border-b border-border shrink-0 bg-background">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="h-7 w-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-            <Database className="h-4 w-4 text-primary" />
-          </div>
+          <Logo className="h-7 w-7 shrink-0" />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="font-semibold text-sm leading-none">Quill</span>
+              <span className="font-semibold text-sm leading-none">SelectStar</span>
               <Badge variant="outline" className="text-[9px] h-4 px-1 uppercase tracking-wide">{dialect}</Badge>
             </div>
           </div>

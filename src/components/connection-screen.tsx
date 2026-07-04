@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Logo } from "@/components/logo";
 import { useSession } from "@/lib/store";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
@@ -145,10 +146,8 @@ export function ConnectionScreen() {
             transition={{ duration: 0.6 }}
             className="flex items-center gap-2.5"
           >
-            <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <Database className="h-5 w-5 text-primary" />
-            </div>
-            <span className="font-semibold text-lg tracking-tight">Quill</span>
+            <Logo className="h-9 w-9" />
+            <span className="font-semibold text-lg tracking-tight">SelectStar</span>
             <span className="ml-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium">beta</span>
           </motion.div>
 
@@ -239,10 +238,8 @@ export function ConnectionScreen() {
           >
             {/* Mobile logo */}
             <div className="lg:hidden flex items-center gap-2.5 mb-8 justify-center">
-              <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                <Database className="h-5 w-5 text-primary" />
-              </div>
-              <span className="font-semibold text-xl tracking-tight">Quill</span>
+              <Logo className="h-10 w-10" />
+              <span className="font-semibold text-xl tracking-tight">SelectStar</span>
             </div>
 
             <div className="lg:hidden text-center mb-6">

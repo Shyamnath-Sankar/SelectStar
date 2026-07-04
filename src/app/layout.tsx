@@ -15,11 +15,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Quill — Agentic Database Analysis",
+  title: "SelectStar — Agentic Database Analysis",
   description:
     "Paste a connection string, ask questions in plain English, and get answers, charts, and models from a team of AI agents.",
-  keywords: ["database", "SQL", "agents", "analytics", "Vega-Lite", "Next.js"],
-  authors: [{ name: "Quill" }],
+  keywords: ["database", "SQL", "agents", "analytics", "Vega-Lite", "Next.js", "SelectStar"],
+  authors: [{ name: "SelectStar" }],
 };
 
 export default function RootLayout({
