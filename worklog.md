@@ -285,3 +285,60 @@ Used the VLM skill to iteratively evaluate the landing page screenshot:
    control over bin count/edges.
 
 
+
+---
+
+## Round 5 — Rename to SelectStar + Professional README (2025-07-05)
+
+### Product Renamed: Quill → SelectStar
+- Created `src/components/logo.tsx` — an inline SVG `[S*]` logo mark (rounded
+  primary-color square, white "S" stroke, white star/asterisk accent).
+- Replaced "Quill" → "SelectStar" everywhere: `layout.tsx` metadata/title,
+  `app-shell.tsx` top-bar wordmark, `connection-screen.tsx` desktop + mobile
+  hero. All logo instances now use the `Logo` component.
+- Verified in browser: tab title is "SelectStar — Agentic Database Analysis",
+  logo SVG renders with alt text, wordmark shows "SelectStar".
+
+### Professional README with Real Screenshots
+Captured 10 real screenshots of the working demo at 1440px width:
+1. Landing page (split-screen hero + agent pipeline)
+2. Empty session with suggested questions
+3. SQL agent query result
+4. Viz agent bar chart
+5. EDA agent statistical summary
+6. ML agent k-means clustering
+7. Schema browser sheet
+8. Zen mode enabled
+9. Pending write confirmation UI
+10. Audit log sheet
+
+Wrote an ultra-detailed `README.md` in the Leantime style including:
+- Centered logo + badges + hero screenshot
+- Feature table (Agent Pipeline / Safety / Canvas / Connectivity)
+- Full screenshots gallery (5 rows × 2 columns)
+- **"How It Works — Agentic Orchestration Without Python"** section that
+  directly answers the Python/LangGraph/FastAPI question with a concept
+  mapping table and the orchestrator graph diagram + code excerpt
+- The six agents explained in a table
+- SSE streaming explanation with real event examples
+- Zen Mode safety section
+- Canvas discriminated-union type definition
+- System requirements
+- Installation & quick start (5 steps)
+- Connecting to SQLite/PostgreSQL/MySQL
+- Full project structure tree
+- Complete tech stack with links
+- API reference table (10 endpoints)
+- Scripts reference
+- Security notes
+- Design principles
+- Contributing guide (how to add an agent / canvas type)
+- MIT license
+
+### Files Modified This Round
+- `src/components/logo.tsx` — NEW: the `[S*]` SVG logo + `LogoLockup`.
+- `src/app/layout.tsx` — title/authors → SelectStar.
+- `src/components/app-shell.tsx` — top bar uses `Logo` + "SelectStar".
+- `src/components/connection-screen.tsx` — hero uses `Logo` + "SelectStar".
+- `public/screenshots/*.png` — 10 real demo screenshots + logo SVG.
+- `README.md` — NEW: comprehensive professional README.
