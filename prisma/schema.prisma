@@ -1,0 +1,85 @@
+// This is the Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// A single analysis session bound to one database connection.
+model Session {
+  id              String   @id @default(cuid())
+  // Pretty label, e.g. "Demo E-commerce DB" or derived from the connection string.
+  label           String   @default("Untitled session")
+  // Dialect detected from the connection string: "sqlite" | "postgres" | "mysql"
+  dialect         String   @default("sqlite")
+  // The raw connection string the user pasted. Stored so the session can be
+  // re-opened. In a real deployment this should be encrypted at rest.
+  connectionString String
+  // Whether the connected role appears to have write privileges.
+  canWrite        Boolean  @default(false)
+  // Per-session Zen-mode (write) toggle. Always off on new sessions.
+  zenMode         Boolean  @default(false)
+  // Compact JSON of the introspected schema snapshot (tables/columns/keys).
+  schemaSnapshot  String?
+  // Human-readable status: "connecting" | "connected" | "error"
+  status          String   @default("connecting")
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  messages        Message[]
+  canvasObjects   CanvasObject[]
+  auditLogs       AuditLog[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  // "user" | "assistant" | "system"
+  role      String
+  content   String
+  // Optional structured metadata, e.g. { agent: "sql", steps: [...] }
+  meta      String?
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+// Ordered artifacts rendered in the canvas pane.
+model CanvasObject {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  // Discriminator: "table" | "chart" | "sql" | "eda_summary" | "model_result" | "pending_write" | "error"
+  type      String
+  // JSON payload matching the CanvasObject union in src/lib/types.ts
+  data      String
+  // Turn index this object belongs to (increments per user message).
+  turn      Int      @default(0)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+// Append-only audit trail of every executed write statement.
+model AuditLog {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sql       String
+  // "executed" | "confirmed" | "rolled_back" | "failed"
+  status    String
+  rowsAffected Int   @default(0)
+  // Free-text note, e.g. error message or rollback reason.
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
