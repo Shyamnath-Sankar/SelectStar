@@ -369,11 +369,14 @@ class PostgresConnection implements DbConnection {
           for (const r of fkRes.rows) fkMap.set(r.column_name, { table: r.ref_table, column: r.ref_column });
         } catch { /* permission denied — leave fkMap empty */ }
 
+        // Row count — best-effort with a per-statement timeout so one slow
+        // table on a remote database doesn't block the whole introspection.
         let rowCount = 0;
         try {
+          await client.query("SET LOCAL statement_timeout = '3s'");
           const r = await client.query(`SELECT COUNT(*)::int c FROM ${quoteIdent(t.table_schema)}.${quoteIdent(t.table_name)}`);
           rowCount = r.rows[0]?.c ?? 0;
-        } catch { /* permission denied etc. */ }
+        } catch { /* timeout / permission denied — leave 0 */ }
 
         tableInfos.push({
           name: t.table_name,

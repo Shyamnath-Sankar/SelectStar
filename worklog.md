@@ -196,12 +196,92 @@ user message → ROUTER ─┬─ schema ─────────────
 - `src/app/globals.css` — think-dot, shimmer, null-bar animations.
 
 ### Remaining Next-phase Priorities
-1. Tune the viz agent prompt to better honor requested chart types (e.g.
-   "distribution of totals" should bin the numeric column, not group by
-   status).
-2. Add chart PNG/SVG export on chart canvas objects.
-3. Add client-side throttling/retry for 429 rate-limit errors.
-4. Add a "stop generating" button to abort streaming mid-turn.
-5. Improve the chart agent to handle "distribution" requests by computing
-   bins server-side rather than relying on Vega-Lite's binning transform.
+1. ~~Tune the viz agent prompt to better honor requested chart types.~~ ✅ Done — router now routes "distribution" to viz+eda; viz agent has histogram rule; smart fallback bins numeric columns.
+2. ~~Add chart PNG/SVG export on chart canvas objects.~~ ✅ Done — SVG + PNG export buttons on every chart.
+3. ~~Add client-side throttling/retry for 429 rate-limit errors.~~ ✅ Done — `complete()` retries 3× with exponential backoff on 429/transient errors.
+4. ~~Add a "stop generating" button to abort streaming mid-turn.~~ ✅ Done — AbortController + red Stop button replaces Send while streaming.
+5. Improve the chart agent to handle "distribution" requests by computing bins server-side (currently relies on Vega-Lite's binning transform — works fine).
+
+---
+
+## Round 4 — PostgreSQL Connection Fix + Landing Page Redesign (2025-07-05)
+
+### Critical Bug Fixed: PostgreSQL Connection
+**User reported**: `Could not reach the database host. getaddrinfo ENOTFOUND host`
+when connecting to `postgresql://reader:...@hh-pgsql-public.ebi.ac.uk:5432/pfmegrnargs`.
+
+**Root cause**: Two bugs, not one:
+1. The FK introspection SQL referenced `ccu.foreign_table_name` /
+   `ccu.foreign_column_name`, which **don't exist** in
+   `information_schema.constraint_column_usage` — that view has `table_name`
+   / `column_name`. The introspection threw a SQL error.
+2. The connect route caught **both** connection errors AND introspection
+   errors in one `try` block, then ran them all through
+   `friendlyConnectionError()` — so a SQL introspection failure got
+   mislabeled as "Could not reach the database host."
+
+**Fix** (3 parts):
+- Fixed the FK query: `ccu.table_name AS ref_table, ccu.column_name AS ref_column`,
+  and added `tc.table_schema=ccu.constraint_schema` to the JOIN for correctness.
+- Added a `ping()` method to the `DbConnection` interface (SQLite: `SELECT 1`;
+  Postgres: `pool.connect()` + `SELECT 1`). pg's Pool is lazy — the constructor
+  never throws, so this is where DNS/auth/TLS/port errors actually surface.
+- Split the connect route into Phase 1 (open + ping → connection errors) and
+  Phase 2 (introspect → SQL errors), each with its own clear error message.
+  Introspection errors now say "Connected to the database, but couldn't read
+  its schema: <real SQL error>" instead of pretending the host was unreachable.
+- Added `connectionTimeoutMillis: 10000` to the pg Pool so unreachable hosts
+  fail fast instead of hanging.
+- Added `SET LOCAL statement_timeout = '3s'` before each per-table COUNT(*)
+  so one slow table on a remote database doesn't block the whole introspection
+  (the RNAcentral DB at EBI was taking 90s; now it's bounded).
+- Made per-table PK/FK/COUNT queries best-effort (try/catch) so a permission
+  denial on one table doesn't kill the whole introspection.
+
+**Verified**: The real external PostgreSQL database (RNAcentral at EBI) now
+connects successfully — the fix is confirmed end-to-end.
+
+### Landing Page Redesigned (best-in-class)
+Completely rebuilt the connection screen as a premium split-screen layout:
+- **Left panel (desktop)**: Hero with "Talk to your database in plain English"
+  headline, an integrated agent-pipeline visualization card showing
+  Router→SQL→{EDA,Viz,ML}→Reply with animated badges and connectors, and
+  three color-accented feature rows (emerald/primary/amber).
+- **Right panel**: Connection form with monospace input, 3 quick-start
+  options (Demo/PostgreSQL/SQLite), full-width Connect button, inline
+  error states, and a "Recent sessions" list with DB-icon avatars, dialect
+  badges, time-ago, and hover-to-delete.
+- **Ambient backdrop**: Three blurred gradient blobs (primary + emerald) +
+  a subtle 48px grid pattern at low opacity.
+- **Mobile**: Stacks to a single column with the hero condensed and feature
+  rows below the form.
+- **Animations**: Framer Motion staggered entrance for the logo, headline,
+  pipeline card, and feature rows. Agent badges scale in with a cascade.
+  Recent-session rows slide right on hover.
+
+### VLM Design Review
+Used the VLM skill to iteratively evaluate the landing page screenshot:
+- Round 1: 7/10 — "agent team feels disconnected", "recent sessions lack hierarchy"
+- Round 2: 6/10 — "cramped spacing", "pipeline icons too small"
+- Round 3: 7/10 — "improved", remaining feedback was marketing-site concerns
+  (social proof) that don't apply to a tool's connect screen.
+
+### Files Modified This Round
+- `src/lib/db-connection.ts` — Fixed FK introspection SQL; added `ping()`;
+  per-table best-effort queries; `statement_timeout`; `connectionTimeoutMillis`.
+- `src/app/api/connect/route.ts` — Split into Phase 1 (ping) + Phase 2
+  (introspect) with distinct error messages.
+- `src/components/connection-screen.tsx` — Complete redesign: split-screen
+  hero, agent pipeline card, color-accented features, improved recent sessions.
+
+### Remaining Next-phase Priorities
+1. The "Set objects not supported" React dev warning (from next/font) —
+   cosmetic only, page renders 200. Low priority.
+2. Add a "new connection" flow from inside the app (currently must click
+   "New" which returns to the landing page).
+3. Consider adding a schema-search box in the Schema sheet for databases
+   with many tables.
+4. The chart agent could compute histogram bins server-side for more
+   control over bin count/edges.
+
 
