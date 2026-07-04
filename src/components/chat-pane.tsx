@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, Loader2, User, Sparkles, RotateCcw, AlertCircle, Database, Copy, RefreshCw, Check } from "lucide-react";
+import { Send, Loader2, User, Sparkles, RotateCcw, AlertCircle, Database, Copy, RefreshCw, Check, Square, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession, type ChatMessage } from "@/lib/store";
@@ -31,12 +31,26 @@ export function ChatPane() {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const [showScrollDown, setShowScrollDown] = useState(false);
 
   // Auto-scroll to bottom as new content streams in.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
+
+  // Track whether the user has scrolled up, to show a scroll-to-bottom button.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setShowScrollDown(distFromBottom > 120);
+    };
+    el.addEventListener("scroll", onScroll);
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   async function send(text?: string) {
     const content = (text ?? input).trim();
@@ -50,6 +64,9 @@ export function ChatPane() {
     const assistantId = crypto.randomUUID();
     addMessage({ id: assistantId, role: "assistant", content: "", streaming: true, steps: [] });
     setSending(true);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     await streamChat(sessionId, content, {
       onStep: (agent, label) => addStepToMessage(assistantId, { agent, label }),
@@ -66,19 +83,22 @@ export function ChatPane() {
       onDone: () => {
         finalizeMessage(assistantId);
         setSending(false);
+        abortRef.current = null;
       },
-    });
+    }, controller.signal);
   }
 
   async function regenerate() {
     if (!sessionId || sending) return;
     const userContent = popLastAssistant();
     if (!userContent) return;
-    // Re-run the agent turn without adding a new user message (the user
-    // message is already in the DB from the original turn).
     const assistantId = crypto.randomUUID();
     addMessage({ id: assistantId, role: "assistant", content: "", streaming: true, steps: [] });
     setSending(true);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     await streamChat(sessionId, userContent, {
       onStep: (agent, label) => addStepToMessage(assistantId, { agent, label }),
       onSql: () => {},
@@ -92,8 +112,20 @@ export function ChatPane() {
       onDone: () => {
         finalizeMessage(assistantId);
         setSending(false);
+        abortRef.current = null;
       },
-    });
+    }, controller.signal);
+  }
+
+  function stopGenerating() {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+      setSending(false);
+      // Finalize any streaming message.
+      const streaming = useSession.getState().messages.find((m) => m.streaming);
+      if (streaming) finalizeMessage(streaming.id);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -119,7 +151,7 @@ export function ChatPane() {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0 relative">
         {hasMessages ? (
           <AnimatePresence initial={false}>
             {messages.map((m, i) => (
@@ -138,6 +170,18 @@ export function ChatPane() {
             onPick={(q) => void send(q)}
           />
         )}
+        {showScrollDown && (
+          <button
+            onClick={() => {
+              const el = scrollRef.current;
+              if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+            }}
+            className="sticky bottom-2 left-full ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-background border border-border shadow-md hover:bg-accent transition-colors z-10"
+            title="Scroll to bottom"
+          >
+            <ArrowDown className="h-4 w-4 text-muted-foreground" />
+          </button>
+        )}
       </div>
 
       {/* Composer */}
@@ -152,15 +196,27 @@ export function ChatPane() {
             className="min-h-[44px] max-h-40 resize-none pr-12 text-sm leading-relaxed"
             disabled={sending}
           />
-          <Button
-            size="icon"
-            className="absolute bottom-2 right-2 h-8 w-8"
-            onClick={() => void send()}
-            disabled={sending || !input.trim()}
-            aria-label="Send"
-          >
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </Button>
+          {sending ? (
+            <Button
+              size="icon"
+              variant="destructive"
+              className="absolute bottom-2 right-2 h-8 w-8"
+              onClick={stopGenerating}
+              aria-label="Stop generating"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              size="icon"
+              className="absolute bottom-2 right-2 h-8 w-8"
+              onClick={() => void send()}
+              disabled={!input.trim()}
+              aria-label="Send"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
         </div>
         <p className="mt-1.5 text-[10px] text-muted-foreground px-1">
           Enter to send · Shift+Enter for a newline

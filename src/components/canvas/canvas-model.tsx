@@ -24,11 +24,11 @@ export function CanvasModel({ obj }: { obj: ModelResultCanvasObject }) {
       </div>
 
       <div className="px-4 py-3 border-b border-border/50">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {Object.entries(obj.metrics).map(([k, v]) => (
-            <div key={k} className="rounded-lg bg-muted/40 px-2.5 py-1.5">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{k}</div>
-              <div className="text-sm font-mono tabular-nums">{fmt(v)}</div>
+            <div key={k} className={cn("rounded-lg border px-2.5 py-1.5", metricBadgeClass(k, v))}>
+              <div className="text-[10px] uppercase tracking-wide opacity-70">{k}</div>
+              <div className="text-sm font-mono tabular-nums font-medium">{fmt(v)}</div>
             </div>
           ))}
         </div>
@@ -78,4 +78,22 @@ function fmt(x: number): string {
   if (Number.isNaN(x)) return "—";
   if (Math.abs(x) >= 1000) return Math.round(x).toLocaleString();
   return (Math.round(x * 1000) / 1000).toString();
+}
+
+/** Color-code metric badges: R² → emerald if good, amber if poor; inertia → lower-is-better. */
+function metricBadgeClass(key: string, value: number): string {
+  const k = key.toLowerCase();
+  if (k === "r2") {
+    return value > 0.7 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+      : value > 0.4 ? "bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400"
+      : "bg-destructive/10 border-destructive/30 text-destructive";
+  }
+  if (k === "inertia" || k === "mae") {
+    return "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400";
+  }
+  if (k === "slope") {
+    return value > 0 ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+      : "bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400";
+  }
+  return "bg-muted/40 border-border";
 }

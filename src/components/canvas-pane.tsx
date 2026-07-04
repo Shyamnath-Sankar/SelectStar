@@ -1,12 +1,32 @@
 "use client";
 
+import { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { LayoutDashboard, Sparkles } from "lucide-react";
+import { LayoutDashboard, Sparkles, Trash2, ArrowDown } from "lucide-react";
 import { useSession } from "@/lib/store";
 import { CanvasObjectView } from "@/components/canvas/canvas-object";
+import { toast } from "sonner";
 
 export function CanvasPane() {
   const canvas = useSession((s) => s.canvas);
+  const clearCanvas = () => {
+    useSession.setState({ canvas: [] });
+    toast.success("Canvas cleared");
+  };
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setShowScrollDown(distFromBottom > 120);
+    };
+    el.addEventListener("scroll", onScroll);
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
     <div className="flex flex-col h-full bg-muted/20">
@@ -15,9 +35,19 @@ export function CanvasPane() {
         <span className="font-medium text-sm">Canvas</span>
         <span className="text-xs text-muted-foreground">·</span>
         <span className="text-xs text-muted-foreground">{canvas.length} {canvas.length === 1 ? "artifact" : "artifacts"}</span>
+        {canvas.length > 0 && (
+          <button
+            onClick={clearCanvas}
+            className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors"
+            title="Clear canvas"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Clear</span>
+          </button>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 relative">
         <AnimatePresence initial={false}>
           {canvas.length === 0 ? (
             <EmptyCanvas key="empty" />
@@ -36,6 +66,18 @@ export function CanvasPane() {
             ))
           )}
         </AnimatePresence>
+        {showScrollDown && (
+          <button
+            onClick={() => {
+              const el = scrollRef.current;
+              if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+            }}
+            className="sticky bottom-2 left-full ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-background border border-border shadow-md hover:bg-accent transition-colors"
+            title="Scroll to bottom"
+          >
+            <ArrowDown className="h-4 w-4 text-muted-foreground" />
+          </button>
+        )}
       </div>
     </div>
   );

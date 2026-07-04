@@ -29,6 +29,13 @@ export interface WriteResult {
 
 export interface DbConnection {
   readonly dialect: Dialect;
+  /**
+   * Verify the connection is actually live (DNS resolved, authenticated,
+   * server reachable). For lazy drivers like pg's Pool this forces a real
+   * round-trip. Throws on connection-level failure (ENOTFOUND, ECONNREFUSED,
+   * authentication, SSL, etc.) — distinct from SQL/introspection errors.
+   */
+  ping(): Promise<void>;
   /** Full introspection pass (spec §4.3). */
   introspect(): Promise<SchemaSnapshot>;
   /** Run a read query. Throws on error. */
@@ -160,6 +167,12 @@ class SqliteConnection implements DbConnection {
     }
   }
 
+  // SQLite opens the file synchronously in the constructor, so by the time
+  // we get here the connection is already established (or it threw).
+  async ping(): Promise<void> {
+    this.db.prepare("SELECT 1").get();
+  }
+
   async introspect(): Promise<SchemaSnapshot> {
     const tables = this.db.prepare(
       `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`
@@ -270,11 +283,30 @@ class PostgresConnection implements DbConnection {
   constructor(connStr: string) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Pool } = require("pg");
-    this.pool = new Pool({ connectionString: connStr, max: 4, idleTimeoutMillis: 30000 });
+    this.pool = new Pool({
+      connectionString: connStr,
+      max: 4,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000, // fail fast on unreachable hosts
+    });
   }
 
   private async getClient() {
     return this.pool.connect();
+  }
+
+  /**
+   * Force a real round-trip to the server. pg's Pool is lazy, so the
+   * constructor never throws — this is where DNS/auth/TLS/port errors
+   * actually surface. A short connect-timeout keeps failures snappy.
+   */
+  async ping(): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("SELECT 1");
+    } finally {
+      client.release();
+    }
   }
 
   async introspect(): Promise<SchemaSnapshot> {
@@ -292,37 +324,50 @@ class PostgresConnection implements DbConnection {
 
       const tableInfos: TableInfo[] = [];
       for (const t of tablesRes.rows) {
-        const colsRes = await client.query<{
-          column_name: string; data_type: string; is_nullable: string;
-        }>(`
-          SELECT column_name, data_type, is_nullable
-          FROM information_schema.columns
-          WHERE table_schema=$1 AND table_name=$2
-          ORDER BY ordinal_position
-        `, [t.table_schema, t.table_name]);
+        // Columns — this is the critical one; if it fails, skip the table.
+        let colsRes: { rows: { column_name: string; data_type: string; is_nullable: string }[] };
+        try {
+          colsRes = await client.query<{
+            column_name: string; data_type: string; is_nullable: string;
+          }>(`
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema=$1 AND table_name=$2
+            ORDER BY ordinal_position
+          `, [t.table_schema, t.table_name]);
+        } catch {
+          continue; // permission denied on this table's metadata — skip it
+        }
 
-        const pkRes = await client.query<{ column_name: string }>(`
-          SELECT kcu.column_name
-          FROM information_schema.table_constraints tc
-          JOIN information_schema.key_column_usage kcu
-            ON tc.constraint_name=kcu.constraint_name AND tc.table_schema=kcu.table_schema
-          WHERE tc.constraint_type='PRIMARY KEY' AND tc.table_schema=$1 AND tc.table_name=$2
-        `, [t.table_schema, t.table_name]);
-        const pkCols = new Set(pkRes.rows.map((r) => r.column_name));
+        // Primary keys — best-effort.
+        let pkCols = new Set<string>();
+        try {
+          const pkRes = await client.query<{ column_name: string }>(`
+            SELECT kcu.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name=kcu.constraint_name AND tc.table_schema=kcu.table_schema
+            WHERE tc.constraint_type='PRIMARY KEY' AND tc.table_schema=$1 AND tc.table_name=$2
+          `, [t.table_schema, t.table_name]);
+          pkCols = new Set(pkRes.rows.map((r) => r.column_name));
+        } catch { /* permission denied — leave pkCols empty */ }
 
-        const fkRes = await client.query<{
-          column_name: string; foreign_table_name: string; foreign_column_name: string;
-        }>(`
-          SELECT kcu.column_name, ccu.foreign_table_name, ccu.foreign_column_name
-          FROM information_schema.table_constraints tc
-          JOIN information_schema.key_column_usage kcu
-            ON tc.constraint_name=kcu.constraint_name AND tc.table_schema=kcu.table_schema
-          JOIN information_schema.constraint_column_usage ccu
-            ON tc.constraint_name=ccu.constraint_name
-          WHERE tc.constraint_type='FOREIGN KEY' AND tc.table_schema=$1 AND tc.table_name=$2
-        `, [t.table_schema, t.table_name]);
+        // Foreign keys — best-effort.
         const fkMap = new Map<string, { table: string; column: string }>();
-        for (const r of fkRes.rows) fkMap.set(r.column_name, { table: r.foreign_table_name, column: r.foreign_column_name });
+        try {
+          const fkRes = await client.query<{
+            column_name: string; ref_table: string; ref_column: string;
+          }>(`
+            SELECT kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+              ON tc.constraint_name=kcu.constraint_name AND tc.table_schema=kcu.table_schema
+            JOIN information_schema.constraint_column_usage ccu
+              ON tc.constraint_name=ccu.constraint_name AND tc.table_schema=ccu.constraint_schema
+            WHERE tc.constraint_type='FOREIGN KEY' AND tc.table_schema=$1 AND tc.table_name=$2
+          `, [t.table_schema, t.table_name]);
+          for (const r of fkRes.rows) fkMap.set(r.column_name, { table: r.ref_table, column: r.ref_column });
+        } catch { /* permission denied — leave fkMap empty */ }
 
         let rowCount = 0;
         try {

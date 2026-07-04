@@ -47,30 +47,13 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  // ---- Phase 1: open + ping the connection (driver-level: DNS, auth, TLS) ----
+  let conn;
   try {
-    const conn = await openConnection(session.id, connStr);
-    const schema = await conn.introspect();
-    const canWrite = await conn.detectCanWrite();
-
-    await db.session.update({
-      where: { id: session.id },
-      data: {
-        status: "connected",
-        canWrite,
-        schemaSnapshot: JSON.stringify(schema),
-      },
-    });
-
-    const suggestedQuestions = suggestStarterQuestions(schema);
-
-    const response: ConnectResponse = {
-      sessionId: session.id,
-      dialect: parsed.dialect,
-      schema,
-      canWrite,
-      suggestedQuestions,
-    };
-    return NextResponse.json(response);
+    conn = await openConnection(session.id, connStr);
+    // pg's Pool is lazy — ping forces a real round-trip so DNS/auth/TLS/port
+    // errors surface HERE, distinct from SQL/introspection errors below.
+    await conn.ping();
   } catch (e) {
     const message = friendlyConnectionError(e as Error, parsed.dialect);
     await db.session.update({
@@ -79,6 +62,53 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ error: message, sessionId: session.id }, { status: 502 });
   }
+
+  // ---- Phase 2: introspect + detect privileges (SQL-level) ----
+  // The connection succeeded, so any failure here is a schema-read problem,
+  // NOT a connection problem — surface the real SQL error directly.
+  let schema;
+  try {
+    schema = await conn.introspect();
+  } catch (e) {
+    const raw = (e as Error).message || String(e);
+    const message = `Connected to the database, but couldn't read its schema: ${raw}. The account may lack permission to query information_schema, or the database may be an older version with different system views.`;
+    await db.session.update({
+      where: { id: session.id },
+      data: { status: "error", errorMessage: message },
+    });
+    return NextResponse.json({ error: message, sessionId: session.id }, { status: 502 });
+  }
+
+  let canWrite = false;
+  try {
+    canWrite = await conn.detectCanWrite();
+  } catch {
+    canWrite = false; // non-fatal — just disable Zen mode
+  }
+
+  try {
+    await db.session.update({
+      where: { id: session.id },
+      data: {
+        status: "connected",
+        canWrite,
+        schemaSnapshot: JSON.stringify(schema),
+      },
+    });
+  } catch (e) {
+    return NextResponse.json({ error: `Connected, but couldn't save the session: ${(e as Error).message}` }, { status: 500 });
+  }
+
+  const suggestedQuestions = suggestStarterQuestions(schema);
+
+  const response: ConnectResponse = {
+    sessionId: session.id,
+    dialect: parsed.dialect,
+    schema,
+    canWrite,
+    suggestedQuestions,
+  };
+  return NextResponse.json(response);
 }
 
 function defaultLabel(connStr: string, dialect: string): string {

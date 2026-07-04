@@ -34,13 +34,17 @@ Rules:
    - One categorical + one quantitative → bar (or column).
    - A date/time + a quantitative → line or area.
    - Two quantitative → point/scatter.
-   - A quantitative distribution → use "bar" with a binned x, OR "area" with a density transform.
+   - A single quantitative column (distribution request) → use "bar" with "x": { "field": "<col>", "type": "quantitative", "bin": true } and "y": { "aggregate": "count", "type": "quantitative" }. This produces a histogram.
+   - A quantitative distribution over categories → "bar" with a binned x.
    - Part-of-whole → "arc" (pie) only when there are few categories; otherwise stacked bar.
 2. Always set a title, an x and/or y encoding, and "tooltip": true.
 3. Reference column names EXACTLY as given — they are case-sensitive.
 4. For large value ranges, add "scale": { "type": "sqrt" } where it helps.
 5. Never include a "data" key — the orchestrator injects the dataset inline as "values" for you.
-6. Keep the spec minimal and valid. No transforms unless genuinely needed.`;
+6. Keep the spec minimal and valid. No transforms unless genuinely needed.
+7. For HISTOGRAMS (distribution of a single numeric column): the encoding MUST be:
+   "encoding": { "x": { "field": "<column>", "type": "quantitative", "bin": true }, "y": { "aggregate": "count", "type": "quantitative" } }
+   Do NOT put "field" in the y channel for a histogram — use "aggregate": "count" only.`;
 
 export async function runVizAgent(state: AgentState): Promise<VizAgentOutput> {
   const frame = state.lastResultId ? getFrame(state.lastResultId) : undefined;
@@ -81,8 +85,8 @@ Decide the best chart type and return ONLY the JSON spec. Remember: do NOT inclu
     title = out.title || "Chart";
     caption = out.caption || out.description || "";
   } catch (e) {
-    // Graceful fallback: a simple bar of the first categorical × first numeric column.
-    spec = fallbackSpec(frame);
+    // Graceful fallback: pick a sensible chart based on the data shape.
+    spec = smartFallbackSpec(frame, state.userInput);
     title = "Chart";
     caption = `Auto-generated chart (the model returned an invalid spec: ${(e as Error).message}).`;
   }
@@ -90,7 +94,7 @@ Decide the best chart type and return ONLY the JSON spec. Remember: do NOT inclu
   // Inject the dataset inline and validate minimally.
   spec = { ...spec, data: { values: frame.rows.slice(0, 1000) } };
   if (!validateSpec(spec)) {
-    spec = fallbackSpec(frame);
+    spec = smartFallbackSpec(frame, state.userInput);
     spec = { ...spec, data: { values: frame.rows.slice(0, 1000) } };
     caption = caption || "Showing a default chart because the generated spec was malformed.";
   }
@@ -127,16 +131,81 @@ function validateSpec(spec: Record<string, unknown>): boolean {
   return true;
 }
 
-function fallbackSpec(frame: { columns: { name: string }[]; rows: Record<string, unknown>[] }): Record<string, unknown> {
+/**
+ * Smart fallback that picks a sensible chart based on the data shape:
+ *  - Single numeric column → histogram (binned x, count y)
+ *  - Single categorical column → bar chart of counts
+ *  - Date + numeric → line chart
+ *  - Categorical + numeric → bar chart (sum)
+ *  - Two numeric → scatter
+ */
+function smartFallbackSpec(frame: { columns: { name: string }[]; rows: Record<string, unknown>[] }, question: string): Record<string, unknown> {
   const cols = frame.columns.map((c) => c.name);
-  const firstNumeric = cols.find((c) => frame.rows.some((r) => typeof Number(r[c]) === "number" && !Number.isNaN(Number(r[c])))) || cols[0];
-  const firstCategorical = cols.find((c) => c !== firstNumeric) || cols[0];
+  const numericCols = cols.filter((c) => frame.rows.some((r) => {
+    const v = Number(r[c]);
+    return !Number.isNaN(v);
+  }));
+  const dateCols = cols.filter((c) => frame.rows.some((r) => typeof r[c] === "string" && /^\d{4}-\d{2}-\d{2}/.test(String(r[c]))));
+  const categoricalCols = cols.filter((c) => !numericCols.includes(c) && !dateCols.includes(c));
+  const isDistribution = /distribut|histogram|spread/i.test(question);
+
+  // Single numeric column → histogram
+  if (numericCols.length >= 1 && (cols.length === 1 || isDistribution)) {
+    return {
+      mark: { type: "bar", tooltip: true },
+      encoding: {
+        x: { field: numericCols[0], type: "quantitative", bin: true },
+        y: { aggregate: "count", type: "quantitative" },
+      },
+    };
+  }
+  // Date + numeric → line
+  if (dateCols.length >= 1 && numericCols.length >= 1) {
+    return {
+      mark: { type: "line", tooltip: true },
+      encoding: {
+        x: { field: dateCols[0], type: "temporal" },
+        y: { field: numericCols[0], type: "quantitative", aggregate: "sum" },
+      },
+    };
+  }
+  // Categorical + numeric → bar
+  if (categoricalCols.length >= 1 && numericCols.length >= 1) {
+    return {
+      mark: { type: "bar", tooltip: true },
+      encoding: {
+        x: { field: categoricalCols[0], type: "nominal" },
+        y: { field: numericCols[0], type: "quantitative", aggregate: "sum" },
+        color: { field: categoricalCols[0], type: "nominal", legend: null },
+      },
+    };
+  }
+  // Single categorical → bar of counts
+  if (categoricalCols.length >= 1) {
+    return {
+      mark: { type: "bar", tooltip: true },
+      encoding: {
+        x: { field: categoricalCols[0], type: "nominal" },
+        y: { aggregate: "count", type: "quantitative" },
+      },
+    };
+  }
+  // Two numeric → scatter
+  if (numericCols.length >= 2) {
+    return {
+      mark: { type: "circle", tooltip: true },
+      encoding: {
+        x: { field: numericCols[0], type: "quantitative" },
+        y: { field: numericCols[1], type: "quantitative" },
+      },
+    };
+  }
+  // Ultimate fallback
   return {
     mark: { type: "bar", tooltip: true },
     encoding: {
-      x: { field: firstCategorical, type: "nominal" },
-      y: { field: firstNumeric, type: "quantitative", aggregate: "sum" },
-      color: { field: firstCategorical, type: "nominal", legend: null },
+      x: { field: cols[0], type: "nominal" },
+      y: { aggregate: "count", type: "quantitative" },
     },
   };
 }

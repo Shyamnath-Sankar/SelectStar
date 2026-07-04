@@ -31,8 +31,9 @@ Rules:
 - Omit "synthesis" — it always runs last and you must never include it.
 - If the user only asks a general/conversational question with no data need, return an EMPTY agents list [].
 - If the user asks "how many / list / show me / what is the total / top N / breakdown / average", include "sql".
-- If the user explicitly says "summarize / profile / distribution / statistics / EDA", include "eda" (and "sql" if data isn't already available).
-- If the user says "chart / plot / visualize / graph / bar / line / scatter", include "viz" (and "sql" if data isn't available).
+- If the user explicitly says "summarize / profile / statistics / EDA", include "eda" (and "sql" if data isn't already available).
+- If the user says "distribution / histogram / spread / spread of / distribution of", include BOTH "eda" AND "viz" (and "sql" if data isn't available) — a distribution is best shown as a histogram chart plus summary stats.
+- If the user says "chart / plot / visualize / graph / bar / line / scatter / pie", include "viz" (and "sql" if data isn't available).
 - If the user says "forecast / predict / cluster / regression / model / classify / ML", include "ml" (and "sql" if data isn't available).
 - A pure schema lookup ("what tables", "describe orders") needs ONLY "schema".
 - When unsure whether data is needed, prefer including "sql".

@@ -33,18 +33,40 @@ export interface LlmOptions {
 /**
  * Single-shot completion. Returns the assistant text.
  * Uses the 'assistant' role convention for system prompts (per the SDK docs).
+ *
+ * Retries automatically on rate-limit (429) and transient network errors with
+ * exponential backoff (1s, 2s, 4s), so a brief rate-limit spike doesn't
+ * surface as a hard error to the user.
  */
 export async function complete(
   messages: ChatMessage[],
   opts: LlmOptions = {}
 ): Promise<string> {
   const zai = await client();
-  const completion = await zai.chat.completions.create({
-    messages: messages.map((m) => ({ role: m.role, content: m.content })),
-    thinking: { type: opts.thinking ? "enabled" : "disabled" },
-    ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
-  });
-  return completion.choices[0]?.message?.content ?? "";
+  const maxRetries = 3;
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const completion = await zai.chat.completions.create({
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        thinking: { type: opts.thinking ? "enabled" : "disabled" },
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+      });
+      return completion.choices[0]?.message?.content ?? "";
+    } catch (e) {
+      lastError = e;
+      const msg = (e as Error).message || String(e);
+      const isRateLimit = /429|rate.?limit|too many requests/i.test(msg);
+      const isTransient = /ECONNRESET|ETIMEDOUT|fetch failed|network/i.test(msg);
+      if (attempt < maxRetries && (isRateLimit || isTransient)) {
+        const delay = Math.min(8000, 1000 * 2 ** attempt) + Math.random() * 500;
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      break;
+    }
+  }
+  throw lastError;
 }
 
 /**
