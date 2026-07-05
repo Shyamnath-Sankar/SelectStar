@@ -27,7 +27,8 @@ COPY package.json bun.lock* ./
 COPY prisma ./prisma
 
 # Install with npm (works everywhere; bun.lock is used for resolution info).
-RUN npm install --omit=dev || npm install
+RUN npm install
+
 
 # ---- Stage 2: builder ---------------------------------------------------
 FROM node:20-slim AS builder
