@@ -52,3 +52,8 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# SQLite databases
+db/*.db
+db/*.db-shm
+db/*.db-wal

@@ -22,4 +22,4 @@ if [ ! -f /app/db/demo.db ]; then
 fi
 
 echo "[entrypoint] Starting SelectStar on port ${PORT:-3000}…"
-exec node .next/standalone/server.js
+exec node server.js
