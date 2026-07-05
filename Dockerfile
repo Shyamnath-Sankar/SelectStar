@@ -72,7 +72,7 @@ ENV DEMO_DB_PATH=/app/db/demo.db
 # LLM config — defaults are Groq; override in Render dashboard.
 ENV LLM_BASE_URL=https://api.groq.com/openai/v1
 ENV LLM_API_KEY=""
-ENV LLM_MODEL=llama-3.3-70b-versatile
+ENV LLM_MODEL=openai/gpt-oss-120b
 
 # Create the db directory (Render mounts a persistent disk here).
 RUN mkdir -p /app/db

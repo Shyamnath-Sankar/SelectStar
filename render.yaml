@@ -19,7 +19,7 @@ services:
       - key: LLM_BASE_URL
         value: https://api.groq.com/openai/v1
       - key: LLM_MODEL
-        value: llama-3.3-70b-versatile
+        value: openai/gpt-oss-120b
       # LLM_API_KEY is set in the Dockerfile default. To override, add it
       # here as a secret:
       # - key: LLM_API_KEY

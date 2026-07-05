@@ -18,8 +18,12 @@
 import OpenAI from "openai";
 
 const BASE_URL = process.env.LLM_BASE_URL || "https://api.groq.com/openai/v1";
-const API_KEY = process.env.LLM_API_KEY || "";
-const MODEL = process.env.LLM_MODEL || "llama-3.3-70b-versatile";
+const API_KEY =
+  process.env.LLM_API_KEY ||
+  process.env.OPENAI_API_KEY ||
+  process.env.GROQ_API_KEY ||
+  "";
+const MODEL = process.env.LLM_MODEL || "openai/gpt-oss-120b";
 
 let _client: OpenAI | null = null;
 
