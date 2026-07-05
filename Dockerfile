@@ -52,6 +52,10 @@ RUN npm run build
 # Seed the demo database so the app works out-of-the-box.
 RUN mkdir -p db && node scripts/seed-demo.js
 
+# Prune devDependencies to keep the runner image small.
+RUN npm prune --omit=dev
+
+
 # ---- Stage 3: runner ----------------------------------------------------
 FROM node:20-slim AS runner
 
@@ -81,9 +85,9 @@ COPY --from=builder /app/public ./public
 # Copy Prisma schema + migrations + the seed script (for first-run init).
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/scripts/seed-demo.js ./scripts/seed-demo.js
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+
+# Copy all pruned node_modules (ensures prisma CLI and all transitive deps like 'effect' are present).
+COPY --from=builder /app/node_modules ./node_modules
 
 # Copy the demo DB seeded during build.
 COPY --from=builder /app/db/demo.db ./db/demo.db
