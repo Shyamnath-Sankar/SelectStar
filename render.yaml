@@ -20,8 +20,7 @@ services:
         value: https://api.groq.com/openai/v1
       - key: LLM_MODEL
         value: openai/gpt-oss-120b
-      # LLM_API_KEY is set in the Dockerfile default. To override, add it
-      # here as a secret:
+      # LLM_API_KEY — set this in the Render dashboard as a secret env var.
       # - key: LLM_API_KEY
       #   sync: false
       - key: DATABASE_URL
