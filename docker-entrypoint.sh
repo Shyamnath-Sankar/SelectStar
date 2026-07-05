@@ -10,9 +10,10 @@ mkdir -p /app/db
 # Push the Prisma schema if the app DB doesn't exist yet (creates tables).
 if [ ! -f /app/db/custom.db ]; then
   echo "[entrypoint] Initializing app database…"
-  node node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss 2>/dev/null || \
-    npx prisma db push --skip-generate 2>/dev/null || true
+  npx prisma db push --skip-generate --accept-data-loss || \
+    node node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss
 fi
+
 
 # Seed the demo e-commerce database if it doesn't exist (first run on a fresh
 # persistent disk, e.g. after creating the Render service).

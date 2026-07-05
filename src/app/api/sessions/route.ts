@@ -15,13 +15,22 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const sessions = await db.session.findMany({
-    orderBy: { updatedAt: "desc" },
-    take: 20,
-    select: {
-      id: true, label: true, dialect: true, status: true,
-      canWrite: true, zenMode: true, createdAt: true, updatedAt: true,
-    },
-  });
-  return NextResponse.json({ sessions });
+  try {
+    const sessions = await db.session.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      select: {
+        id: true, label: true, dialect: true, status: true,
+        canWrite: true, zenMode: true, createdAt: true, updatedAt: true,
+      },
+    });
+    return NextResponse.json({ sessions });
+  } catch (e) {
+    console.error("Failed to fetch sessions from app database:", e);
+    return NextResponse.json(
+      { error: `Database query failed. Details: ${(e as Error).message}`, sessions: [] },
+      { status: 500 }
+    );
+  }
 }
+

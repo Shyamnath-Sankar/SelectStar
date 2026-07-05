@@ -38,14 +38,24 @@ export async function POST(req: NextRequest) {
   const label = body.label?.trim() || defaultLabel(connStr, parsed.dialect);
 
   // Create the session row first so we have an id for the connection registry.
-  const session = await db.session.create({
-    data: {
-      label,
-      dialect: parsed.dialect,
-      connectionString: connStr,
-      status: "connecting",
-    },
-  });
+  let session;
+  try {
+    session = await db.session.create({
+      data: {
+        label,
+        dialect: parsed.dialect,
+        connectionString: connStr,
+        status: "connecting",
+      },
+    });
+  } catch (e) {
+    console.error("Failed to create session in app database:", e);
+    return NextResponse.json(
+      { error: `Failed to initialize session database entry. Database might not be fully migrated. Details: ${(e as Error).message}` },
+      { status: 500 }
+    );
+  }
+
 
   // ---- Phase 1: open + ping the connection (driver-level: DNS, auth, TLS) ----
   let conn;
