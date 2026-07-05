@@ -316,7 +316,7 @@ MySQL is wired into the architecture (the `DbConnection` interface and the conne
 - **[React 19](https://react.dev)**
 
 ### AI / LLM
-- **[z-ai-web-dev-sdk](https://www.npmjs.com/package/z-ai-web-dev-sdk)** — OpenAI-compatible client, used via one shared wrapper (`src/lib/llm.ts`). Swappable for OpenAI, vLLM, Ollama, or LM Studio by changing one file.
+- **[OpenAI SDK](https://www.npmjs.com/package/openai)** pointed at **[OpenCode Zen](https://opencode.ai)** — an OpenAI-compatible provider, used via one shared wrapper (`src/lib/llm.ts`). The default model is `big-pickle`. Swappable for OpenAI itself, vLLM, Ollama, or LM Studio by changing `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` env vars.
 - **Custom TypeScript agent orchestrator** — the LangGraph-equivalent graph with conditional edges and shared `AgentState`
 
 ### Database connection layer
@@ -377,8 +377,53 @@ bun run dev          # start the dev server (port 3000, with --hot reload)
 bun run lint         # run ESLint
 bun run db:push      # push the Prisma schema to the app SQLite database
 bun run db:generate  # regenerate the Prisma client
-bun run scripts/seed-demo.ts   # seed the demo e-commerce database
+bun run scripts/seed-demo.ts   # seed the demo e-commerce database (bun)
+node scripts/seed-demo.js      # seed the demo e-commerce database (node)
 ```
+
+<br /><br />
+
+## 🚢 Deployment (Render)
+
+SelectStar ships with a Dockerfile and a Render Blueprint for one-click
+deployment.
+
+### Option A — Blueprint (recommended)
+
+1. Push this repo to GitHub.
+2. On [Render](https://render.com), go to **Dashboard → New → Blueprint**.
+3. Select your repo. Render reads `render.yaml` and creates the service.
+4. (Optional) Upgrade from the free plan to **starter** to get a persistent
+   disk — without it, your sessions reset on every redeploy.
+
+### Option B — Manual Docker deploy
+
+1. Push to GitHub.
+2. On Render, create a new **Web Service → Docker**.
+3. Set the Dockerfile path to `./Dockerfile`.
+4. Add a persistent **Disk** mounted at `/app/db` (1 GB is plenty).
+5. Deploy.
+
+### Environment variables
+
+The LLM credentials are baked into the Dockerfile as defaults (OpenCode Zen +
+`big-pickle`), so it works out-of-the-box. To use a different provider, set:
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `LLM_BASE_URL` | `https://opencode.ai/zen/v1` | OpenAI-compatible API base URL |
+| `LLM_API_KEY` | `sk-XRH17i30…` | API key (override with your own in production) |
+| `LLM_MODEL` | `big-pickle` | Model name |
+| `DATABASE_URL` | `file:/app/db/custom.db` | Prisma app database path |
+| `DEMO_DB_PATH` | `/app/db/demo.db` | Demo e-commerce database path |
+| `PORT` | `3000` | Server port (set automatically by Render) |
+
+### Persistent storage
+
+On Render's **starter** plan and above, mount a 1 GB disk at `/app/db`. This
+keeps the app database (sessions, messages, canvas history, audit log) and the
+demo database across redeploys. Without a disk (free plan), the databases are
+ephemeral — they're re-seeded on every deploy.
 
 <br /><br />
 

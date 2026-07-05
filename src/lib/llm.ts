@@ -4,18 +4,32 @@
  * Per spec §3: "Every agent's LLM calls must go through one shared client
  * wrapper — never instantiate the client ad hoc inside an agent."
  *
- * This wrapper uses z-ai-web-dev-sdk, which is an OpenAI-compatible client.
- * Swapping in any other OpenAI-compatible provider (OpenAI itself, vLLM,
- * Ollama, LM Studio) only requires pointing this wrapper at a different
- * base_url + api_key + model triple.
+ * This wrapper uses the OpenAI SDK pointed at an OpenAI-compatible provider.
+ * The default provider is OpenCode Zen (https://opencode.ai/zen/v1) with the
+ * `big-pickle` model. Override via environment variables:
+ *
+ *   LLM_BASE_URL  — e.g. https://opencode.ai/zen/v1
+ *   LLM_API_KEY   — your API key
+ *   LLM_MODEL     — e.g. big-pickle
+ *
+ * Swapping in OpenAI itself, vLLM, Ollama, or LM Studio only requires
+ * changing these three values.
  */
-import ZAI from "z-ai-web-dev-sdk";
+import OpenAI from "openai";
 
-let _zai: Awaited<ReturnType<typeof ZAI.create>> | null = null;
+const BASE_URL = process.env.LLM_BASE_URL || "https://opencode.ai/zen/v1";
+const API_KEY =
+  process.env.LLM_API_KEY ||
+  "sk-XRH17i30ZCvPJg6tSmzHCUpGyyI4FribE4F3kDLUhIxN4odGDs2G2sGCkfClsK2c";
+const MODEL = process.env.LLM_MODEL || "big-pickle";
 
-async function client() {
-  if (!_zai) _zai = await ZAI.create();
-  return _zai;
+let _client: OpenAI | null = null;
+
+function client(): OpenAI {
+  if (!_client) {
+    _client = new OpenAI({ baseURL: BASE_URL, apiKey: API_KEY });
+  }
+  return _client;
 }
 
 export interface ChatMessage {
@@ -32,7 +46,6 @@ export interface LlmOptions {
 
 /**
  * Single-shot completion. Returns the assistant text.
- * Uses the 'assistant' role convention for system prompts (per the SDK docs).
  *
  * Retries automatically on rate-limit (429) and transient network errors with
  * exponential backoff (1s, 2s, 4s), so a brief rate-limit spike doesn't
@@ -42,22 +55,25 @@ export async function complete(
   messages: ChatMessage[],
   opts: LlmOptions = {}
 ): Promise<string> {
-  const zai = await client();
+  const openai = client();
   const maxRetries = 3;
   let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const completion = await zai.chat.completions.create({
+      const completion = await openai.chat.completions.create({
+        model: MODEL,
         messages: messages.map((m) => ({ role: m.role, content: m.content })),
-        thinking: { type: opts.thinking ? "enabled" : "disabled" },
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+        ...(opts.maxTokens !== undefined ? { max_tokens: opts.maxTokens } : {}),
       });
       return completion.choices[0]?.message?.content ?? "";
     } catch (e) {
       lastError = e;
       const msg = (e as Error).message || String(e);
       const isRateLimit = /429|rate.?limit|too many requests/i.test(msg);
-      const isTransient = /ECONNRESET|ETIMEDOUT|fetch failed|network/i.test(msg);
+      const isTransient = /ECONNRESET|ETIMEDOUT|fetch failed|network|socket hang up/i.test(
+        msg
+      );
       if (attempt < maxRetries && (isRateLimit || isTransient)) {
         const delay = Math.min(8000, 1000 * 2 ** attempt) + Math.random() * 500;
         await new Promise((r) => setTimeout(r, delay));
@@ -74,28 +90,46 @@ export async function complete(
  * with the full text. Used by the synthesis node to stream the final reply
  * token-by-token into the chat pane (spec §8 streaming feel).
  *
- * NOTE: z-ai-web-dev-sdk's `stream: true` doesn't yield OpenAI-style delta
- * chunks reliably, so we use the non-streaming `complete()` and re-chunk the
- * result into small pseudo-tokens emitted with a tiny delay. This preserves
- * the live "typing" feel in the UI while staying robust.
+ * Uses the OpenAI SDK's native streaming (`stream: true`) which yields
+ * real delta chunks. Falls back to non-streaming + pseudo-chunking if the
+ * provider rejects streaming.
  */
 export async function completeStream(
   messages: ChatMessage[],
   onToken: (delta: string) => void,
   opts: LlmOptions = {}
 ): Promise<string> {
-  const full = await complete(messages, opts);
-  if (!full) return "";
+  const openai = client();
+  let full = "";
 
-  // Re-chunk into ~3-word pseudo-tokens for a natural typing cadence.
-  const tokens = chunkText(full, 3);
-  for (const tok of tokens) {
-    onToken(tok);
-    // Tiny yield so the browser can paint between batches — feels live
-    // without adding meaningful latency.
-    await new Promise((r) => setTimeout(r, 12));
+  try {
+    const stream = await openai.chat.completions.create({
+      model: MODEL,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      stream: true,
+      ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+      ...(opts.maxTokens !== undefined ? { max_tokens: opts.maxTokens } : {}),
+    });
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content;
+      if (delta) {
+        full += delta;
+        onToken(delta);
+      }
+    }
+    return full;
+  } catch {
+    // Fallback: non-streaming + pseudo-chunked typing feel.
+    full = await complete(messages, opts);
+    if (!full) return "";
+    const tokens = chunkText(full, 3);
+    for (const tok of tokens) {
+      onToken(tok);
+      await new Promise((r) => setTimeout(r, 12));
+    }
+    return full;
   }
-  return full;
 }
 
 /** Split text into chunks of roughly `wordsPerChunk` words, preserving spaces. */

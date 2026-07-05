@@ -375,3 +375,41 @@ Wrote an ultra-detailed `README.md` in the Leantime style including:
 ### Files Modified This Round
 - `public/screenshots/*.png` — 4 fresh light-theme screenshots (old dark ones removed).
 - `README.md` — rewritten per the cleanup instructions above.
+
+---
+
+## Round 7 — LLM swap to OpenCode Zen + Render Docker deployment (2025-07-05)
+
+### LLM Provider Changed: z-ai-web-dev-sdk → OpenAI SDK + OpenCode Zen
+- Installed the `openai` npm package (v6.45.0).
+- Rewrote `src/lib/llm.ts` to use the OpenAI SDK pointed at OpenCode Zen:
+  - `base_url`: `https://opencode.ai/zen/v1`
+  - `api_key`: `sk-XRH17i30ZCvPJg6tSmzHCUpGyyI4FribE4F3kDLUhIxN4odGDs2G2sGCkfClsK2c` (baked in as default)
+  - `model`: `big-pickle`
+- All three are overridable via `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` env vars.
+- `completeStream()` now uses the OpenAI SDK's native `stream: true` (real delta chunks) with a pseudo-chunk fallback. The streaming caret in the UI now reflects real token streaming.
+- Verified end-to-end: connected to demo DB, asked "Chart the top 5 products by sales" → SQL generated + executed + Vega-Lite chart produced + reply streamed, all via OpenCode Zen's `big-pickle` model.
+
+### Render Docker Deployment
+- **`Dockerfile`** — multi-stage build (deps → builder → runner) on `node:20-slim`:
+  - Stage 1 (deps): installs build-essential + python3 for `better-sqlite3` native compilation.
+  - Stage 2 (builder): copies source, generates Prisma client, builds Next.js standalone, seeds the demo DB.
+  - Stage 3 (runner): minimal image with standalone server + traced node_modules + public + prisma + seed script + demo DB. Bakes in the LLM env vars as defaults.
+- **`docker-entrypoint.sh`** — on first run: creates the app DB schema (`prisma db push`) and seeds the demo DB if they don't exist (for fresh persistent disks on Render). Then starts `node .next/standalone/server.js`.
+- **`render.yaml`** — Render Blueprint for one-click deploy: web service (Docker runtime), env vars, 1 GB persistent disk at `/app/db`.
+- **`.dockerignore`** — excludes node_modules, .next, .git, logs, .env, db files.
+- **`scripts/seed-demo.js`** — Node-compatible (CommonJS, `better-sqlite3`) version of the seeder, for use inside Docker where `bun:sqlite` isn't available. Verified it produces the same 6-table e-commerce dataset.
+- Updated `package.json` start script: `bun` → `node` (because `better-sqlite3` is a native Node module that doesn't work under Bun's runtime).
+- Added ESLint ignore for `scripts/seed-demo.js` (CommonJS `require`).
+- Updated README: new "Deployment (Render)" section with blueprint + manual instructions + env-var table + persistent-storage guidance. Updated tech-stack section to reflect the OpenAI SDK + OpenCode Zen provider.
+
+### Files Modified This Round
+- `src/lib/llm.ts` — rewritten to use OpenAI SDK + OpenCode Zen.
+- `package.json` — `start` script uses `node` not `bun`; added `openai` dependency.
+- `Dockerfile` — NEW: multi-stage production build.
+- `docker-entrypoint.sh` — NEW: first-run DB init + server start.
+- `render.yaml` — NEW: Render Blueprint.
+- `.dockerignore` — NEW.
+- `scripts/seed-demo.js` — NEW: Node-compatible seeder.
+- `eslint.config.mjs` — ignore `scripts/seed-demo.js`.
+- `README.md` — deployment section + tech-stack update.

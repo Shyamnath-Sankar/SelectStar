@@ -1,0 +1,38 @@
+# Render Blueprint — deploy SelectStar to Render in one click.
+# https://render.com/docs/blueprint-spec
+#
+# After pushing this file to your repo, go to:
+#   Dashboard → New → Blueprint → select this repo
+# Render will read this file and create the service for you.
+
+services:
+  - type: web
+    name: selectstar
+    runtime: docker
+    plan: free  # upgrade to 'starter' for always-on + more RAM
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      # The LLM credentials are baked into the Dockerfile as defaults, but
+      # you can override them here if you want to use a different provider.
+      - key: LLM_BASE_URL
+        value: https://opencode.ai/zen/v1
+      - key: LLM_MODEL
+        value: big-pickle
+      # LLM_API_KEY is set in the Dockerfile default. To override, add it
+      # here as a secret:
+      # - key: LLM_API_KEY
+      #   sync: false
+      - key: DATABASE_URL
+        value: file:/app/db/custom.db
+      - key: DEMO_DB_PATH
+        value: /app/db/demo.db
+      - key: PORT
+        value: 3000
+    # Persistent disk so sessions + the app DB survive redeploys.
+    # Available on the 'starter' plan and above (not 'free').
+    disk:
+      name: selectstar-data
+      mountPath: /app/db
+      sizeGB: 1
