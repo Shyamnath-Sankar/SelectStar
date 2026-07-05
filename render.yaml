@@ -17,9 +17,9 @@ services:
       # The LLM credentials are baked into the Dockerfile as defaults, but
       # you can override them here if you want to use a different provider.
       - key: LLM_BASE_URL
-        value: https://opencode.ai/zen/v1
+        value: https://api.groq.com/openai/v1
       - key: LLM_MODEL
-        value: big-pickle
+        value: llama-3.3-70b-versatile
       # LLM_API_KEY is set in the Dockerfile default. To override, add it
       # here as a secret:
       # - key: LLM_API_KEY

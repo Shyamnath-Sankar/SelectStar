@@ -69,10 +69,10 @@ ENV HOSTNAME=0.0.0.0
 ENV DATABASE_URL=file:/app/db/custom.db
 # Demo database path.
 ENV DEMO_DB_PATH=/app/db/demo.db
-# LLM config — defaults are OpenCode Zen; override in Render dashboard.
-ENV LLM_BASE_URL=https://opencode.ai/zen/v1
-ENV LLM_API_KEY=sk-XRH17i30ZCvPJg6tSmzHCUpGyyI4FribE4F3kDLUhIxN4odGDs2G2sGCkfClsK2c
-ENV LLM_MODEL=big-pickle
+# LLM config — defaults are Groq; override in Render dashboard.
+ENV LLM_BASE_URL=https://api.groq.com/openai/v1
+ENV LLM_API_KEY=""
+ENV LLM_MODEL=llama-3.3-70b-versatile
 
 # Create the db directory (Render mounts a persistent disk here).
 RUN mkdir -p /app/db

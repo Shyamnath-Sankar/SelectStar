@@ -17,11 +17,9 @@
  */
 import OpenAI from "openai";
 
-const BASE_URL = process.env.LLM_BASE_URL || "https://opencode.ai/zen/v1";
-const API_KEY =
-  process.env.LLM_API_KEY ||
-  "sk-XRH17i30ZCvPJg6tSmzHCUpGyyI4FribE4F3kDLUhIxN4odGDs2G2sGCkfClsK2c";
-const MODEL = process.env.LLM_MODEL || "big-pickle";
+const BASE_URL = process.env.LLM_BASE_URL || "https://api.groq.com/openai/v1";
+const API_KEY = process.env.LLM_API_KEY || "";
+const MODEL = process.env.LLM_MODEL || "llama-3.3-70b-versatile";
 
 let _client: OpenAI | null = null;
 
