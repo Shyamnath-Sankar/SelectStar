@@ -32,7 +32,9 @@ services:
         value: 3000
     # Persistent disk so sessions + the app DB survive redeploys.
     # Available on the 'starter' plan and above (not 'free').
-    disk:
-      name: selectstar-data
-      mountPath: /app/db
-      sizeGB: 1
+    # To use a persistent disk, upgrade plan to 'starter' and uncomment:
+    # disk:
+    #   name: selectstar-data
+    #   mountPath: /app/db
+    #   sizeGB: 1
+
