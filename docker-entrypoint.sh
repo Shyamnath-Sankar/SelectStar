@@ -7,12 +7,19 @@ set -e
 export DATABASE_URL="${DATABASE_URL:-file:/app/db/custom.db}"
 mkdir -p /app/db
 
+# Safety net: check if the Prisma query engine is present for debian-openssl
+if ! ls node_modules/.prisma/client/libquery_engine-debian-openssl-*.so.node >/dev/null 2>&1; then
+  echo "[entrypoint] Query engine for debian-openssl missing. Regenerating Prisma client..."
+  npx prisma generate || true
+fi
+
 # Push the Prisma schema if the app DB doesn't exist yet (creates tables).
 if [ ! -f /app/db/custom.db ]; then
   echo "[entrypoint] Initializing app database…"
   npx prisma db push --skip-generate --accept-data-loss || \
     node node_modules/prisma/build/index.js db push --skip-generate --accept-data-loss
 fi
+
 
 
 # Seed the demo e-commerce database if it doesn't exist (first run on a fresh
