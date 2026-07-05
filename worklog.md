@@ -342,3 +342,36 @@ Wrote an ultra-detailed `README.md` in the Leantime style including:
 - `src/components/connection-screen.tsx` — hero uses `Logo` + "SelectStar".
 - `public/screenshots/*.png` — 10 real demo screenshots + logo SVG.
 - `README.md` — NEW: comprehensive professional README.
+
+---
+
+## Round 6 — Light-theme screenshots + README cleanup (2025-07-05)
+
+### Light-theme screenshots (dev tools badge hidden)
+- Switched the app to light theme via `document.documentElement.classList.remove('dark')`.
+- Hid the Next.js dev-tools badge / issues overlay before every screenshot using
+  `agent-browser eval` (set `display:none` on the badge buttons).
+- Re-captured 4 clean light-themed screenshots at 1440px:
+  1. `01-landing.png` — landing page (split-screen hero)
+  2. `03-sql-query.png` — SQL agent query result
+  3. `04-chart.png` — viz agent bar chart
+  4. `06-ml-clustering.png` — ML agent k-means clustering
+- Deleted the 6 old dark-themed screenshots no longer used.
+- VLM-verified: all 4 are light theme, no dev-tools badges in corners.
+
+### README cleanup per user request
+- **Screenshots gallery**: reduced from 10 images to 4 (2×2 grid).
+- **Mapping table**: removed the "Concept in the spec (Python)" column — now
+  a 2-column table (SelectStar implementation | why it's equivalent).
+- **Code blocks**: removed the `AgentState` type definition and the
+  `runTurn()` code excerpt from the "How It Works" section. Only the ASCII
+  graph diagram remains (it's a visual, not code).
+- **"Streaming without WebSockets" section**: removed entirely.
+- **"The Canvas Concept" section**: removed entirely (the discriminated-union
+  type definition).
+- **Project Structure**: moved UP — now appears right after the screenshots,
+  above "How It Works", "Zen Mode", and "System Requirements".
+
+### Files Modified This Round
+- `public/screenshots/*.png` — 4 fresh light-theme screenshots (old dark ones removed).
+- `README.md` — rewritten per the cleanup instructions above.

@@ -50,72 +50,110 @@ instead of you having to pick a chart type or write SQL manually.
 <table width="100%">
   <tr>
     <td width="50%" align="center"><b>Landing page</b></td>
-    <td width="50%" align="center"><b>Empty session with suggested questions</b></td>
+    <td width="50%" align="center"><b>SQL agent — query result</b></td>
   </tr>
   <tr>
     <td><img alt="SelectStar landing page with split-screen hero, agent pipeline visualization, and connection form" src="public/screenshots/01-landing.png" title="Landing page" /></td>
-    <td><img alt="Connected session showing suggested starter questions based on the real schema" src="public/screenshots/02-empty-session.png" title="Suggested questions" /></td>
-  </tr>
-  <tr>
-    <td align="center"><b>SQL agent — query result</b></td>
-    <td align="center"><b>Viz agent — bar chart</b></td>
-  </tr>
-  <tr>
     <td><img alt="SQL agent executed a query, showing the SQL block and result table in the canvas" src="public/screenshots/03-sql-query.png" title="SQL query result" /></td>
-    <td><img alt="Viz agent built a bar chart of top products by sales, rendered as Vega-Lite SVG" src="public/screenshots/04-chart.png" title="Bar chart" /></td>
   </tr>
   <tr>
-    <td align="center"><b>EDA agent — statistical summary</b></td>
+    <td align="center"><b>Viz agent — bar chart</b></td>
     <td align="center"><b>ML agent — k-means clustering</b></td>
   </tr>
   <tr>
-    <td><img alt="EDA agent produced a statistical summary with null bars, correlations, and column profiles" src="public/screenshots/05-eda.png" title="EDA summary" /></td>
+    <td><img alt="Viz agent built a bar chart of top products by sales, rendered as Vega-Lite SVG" src="public/screenshots/04-chart.png" title="Bar chart" /></td>
     <td><img alt="ML agent clustered products into 3 groups with metrics and predictions table" src="public/screenshots/06-ml-clustering.png" title="ML clustering" /></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Schema browser</b></td>
-    <td align="center"><b>Zen mode enabled</b></td>
-  </tr>
-  <tr>
-    <td><img alt="Schema browser sheet showing tables, columns, primary and foreign keys" src="public/screenshots/07-schema-browser.png" title="Schema browser" /></td>
-    <td><img alt="Zen mode toggle enabled in the top bar, allowing write operations with confirmation" src="public/screenshots/08-zen-mode-on.png" title="Zen mode" /></td>
-  </tr>
-  <tr>
-    <td align="center"><b>Pending write — confirmation UI</b></td>
-    <td align="center"><b>Audit log</b></td>
-  </tr>
-  <tr>
-    <td><img alt="Pending write with impact estimate and Confirm / Dry-run / Cancel actions" src="public/screenshots/09-pending-write.png" title="Pending write" /></td>
-    <td><img alt="Audit log sheet showing all executed and rolled-back write statements" src="public/screenshots/10-audit-log.png" title="Audit log" /></td>
   </tr>
 </table>
 
 <br /><br />
 
-## 🧠 How It Works — Agentic Orchestration Without Python
+## 🏗️ Project Structure
+
+```
+selectstar/
+├── prisma/
+│   └── schema.prisma              # Session, Message, CanvasObject, AuditLog
+├── scripts/
+│   └── seed-demo.ts               # seeds db/demo.db with e-commerce data
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── connect/route.ts        # POST — open + ping + introspect
+│   │   │   ├── chat/route.ts           # POST — SSE stream (the agent turn)
+│   │   │   ├── confirm-write/route.ts  # POST — resolve a pending write
+│   │   │   ├── refresh-schema/route.ts # POST — re-introspect
+│   │   │   ├── sessions/route.ts       # GET — list recent sessions
+│   │   │   ├── sessions/[id]/route.ts  # GET/PATCH/DELETE a session
+│   │   │   ├── audit/route.ts          # GET — audit log for a session
+│   │   │   └── suggest/route.ts        # GET — suggested starter questions
+│   │   ├── layout.tsx
+│   │   └── page.tsx                    # decides: ConnectionScreen or AppShell
+│   ├── components/
+│   │   ├── logo.tsx                    # the [S*] SVG mark
+│   │   ├── connection-screen.tsx       # landing page (split-screen hero)
+│   │   ├── app-shell.tsx               # top bar + resizable two-pane layout
+│   │   ├── chat-pane.tsx               # chat with streaming, regenerate, stop
+│   │   ├── canvas-pane.tsx             # canvas with clear + scroll-to-bottom
+│   │   ├── theme-provider.tsx
+│   │   ├── theme-toggle.tsx
+│   │   └── canvas/
+│   │       ├── canvas-object.tsx       # dispatcher
+│   │       ├── canvas-table.tsx        # table + CSV export
+│   │       ├── canvas-chart.tsx        # Vega-Lite + SVG/PNG export
+│   │       ├── canvas-sql.tsx          # SQL + copy button
+│   │       ├── canvas-eda.tsx          # stats + null-percentage bars
+│   │       ├── canvas-model.tsx        # ML metrics + predictions
+│   │       ├── canvas-pending-write.tsx# confirm / dry-run / cancel
+│   │       └── canvas-error.tsx
+│   └── lib/
+│       ├── types.ts                    # CanvasObject union, AgentState, StreamEvent
+│       ├── llm.ts                      # shared LLM wrapper (complete/Json/Stream + retry)
+│       ├── db-connection.ts            # DbConnection interface + SQLite/Postgres impls
+│       ├── frame-cache.ts              # in-memory dataframe cache
+│       ├── pending-writes.ts           # Zen-mode write registry
+│       ├── session.ts                  # Prisma session/message/canvas persistence
+│       ├── store.ts                    # Zustand client store
+│       ├── chat-client.ts             # SSE stream reader
+│       └── agents/
+│           ├── orchestrator.ts         # the graph (runTurn)
+│           ├── router.ts               # classifies intent
+│           ├── schema.ts               # answers schema questions
+│           ├── sql.ts                  # writes & executes SQL (Zen-gated)
+│           ├── eda.ts                  # statistical profiling
+│           ├── viz.ts                  # Vega-Lite spec generation
+│           ├── ml.ts                   # OLS / k-means / forecast
+│           ├── synthesis.ts            # writes the final reply (streamed)
+│           └── schema-utils.ts         # relevance filtering + suggested questions
+└── package.json
+```
+
+<br /><br />
+
+## 🧠 How It Works — Agentic Orchestration in TypeScript
 
 > **"Wait — no Python, no FastAPI, no LangGraph? How did you orchestrate the agents?"**
 
 This is the most common question. Here's the honest, detailed answer.
 
-### The spec called for Python. We adapted it to TypeScript.
+### Every concept has a TypeScript-native equivalent.
 
-The original product spec called for **Python 3.11 + FastAPI + LangGraph + SQLAlchemy + pandas/scikit-learn**. That's an excellent stack. But this project runs in a **Next.js 16 + TypeScript** environment, so we adapted every Python concept to its TypeScript-native equivalent — **without losing any of the architectural ideas**. Here's the mapping:
+The original product spec called for Python 3.11 + FastAPI + LangGraph + SQLAlchemy + pandas/scikit-learn. That's an excellent stack. But this project runs in a **Next.js 16 + TypeScript** environment, so we adapted every concept to its TypeScript-native equivalent — **without losing any of the architectural ideas**:
 
-| Concept in the spec (Python) | SelectStar's implementation (TypeScript) | Why it's equivalent |
-| ---------------------------- | ---------------------------------------- | ------------------- |
-| **FastAPI** endpoints | **Next.js API Routes** (`src/app/api/*`) | Both are async server endpoints with streaming support. Next.js Route Handlers return `Response` objects, so we stream SSE identically. |
-| **LangGraph** graph with conditional edges | **Custom TypeScript orchestrator** (`src/lib/agents/orchestrator.ts`) | LangGraph is "a graph with shared state + conditional edges." We model the exact same thing with a `runTurn()` function that branches on the router's output. See below. |
-| **SQLAlchemy async** (dialect-agnostic) | **`DbConnection` interface** + `SqliteConnection` / `PostgresConnection` | Same abstraction: one interface, multiple drivers. Adding MySQL = implement one class. |
-| **OpenAI-compatible client** | **`z-ai-web-dev-sdk`** via one shared `llm.ts` wrapper | The SDK is OpenAI-compatible. Swapping providers = change one client. Every agent calls `complete()` / `completeJson()` / `completeStream()`. |
-| **pandas** dataframe handling | **`DataFrame` type + `frame-cache.ts`** | We store result sets server-side keyed by id, pass only the id + a small preview through LLM context — exactly the spec's "never serialize a large dataframe into a prompt." |
-| **scikit-learn** (OLS, k-means) | **Pure-TS implementations** in `src/lib/agents/ml.ts` | Ordinary least squares via normal equations, k-means with k-means++ init, linear-trend forecasting. No Python runtime needed. |
-| **Vega-Lite via react-vega** | **Same** — `react-vega` `VegaEmbed` | The viz agent emits declarative JSON specs the frontend renders as SVG. No executable plotting code ever runs. |
-| **SSE streaming** to the frontend | **Same** — `text/event-stream` response | The `/api/chat` route returns a `ReadableStream` of `data: {...}\n\n` SSE events. |
+| SelectStar's implementation (TypeScript) | Why it's equivalent |
+| ---------------------------------------- | ------------------- |
+| **Next.js API Routes** (`src/app/api/*`) | Async server endpoints with streaming support. Route Handlers return `Response` objects, so we stream SSE identically to FastAPI. |
+| **Custom TypeScript orchestrator** (`src/lib/agents/orchestrator.ts`) | LangGraph is "a graph with shared state + conditional edges." We model the exact same thing with a `runTurn()` function that branches on the router's output. |
+| **`DbConnection` interface** + `SqliteConnection` / `PostgresConnection` | Same abstraction as SQLAlchemy: one interface, multiple drivers. Adding MySQL = implement one class. |
+| **`z-ai-web-dev-sdk`** via one shared `llm.ts` wrapper | The SDK is OpenAI-compatible. Swapping providers = change one client. Every agent calls `complete()` / `completeJson()` / `completeStream()`. |
+| **`DataFrame` type + `frame-cache.ts`** | Store result sets server-side keyed by id, pass only the id + a small preview through LLM context — never serialize a large dataframe into a prompt. |
+| **Pure-TS implementations** in `src/lib/agents/ml.ts` | Ordinary least squares via normal equations, k-means with k-means++ init, linear-trend forecasting. No Python runtime needed. |
+| **`react-vega` `VegaEmbed`** | The viz agent emits declarative Vega-Lite JSON specs the frontend renders as SVG. No executable plotting code ever runs. |
+| **`text/event-stream` response** | The `/api/chat` route returns a `ReadableStream` of SSE events, identical to FastAPI's `StreamingResponse`. |
 
 ### The orchestrator is a graph, not a loop
 
-LangGraph's value is modeling the flow as a **graph with conditional edges and shared state**, not a flat ReAct "think → call tool → repeat" loop. We replicate that exactly. Here's the full graph:
+LangGraph's value is modeling the flow as a **graph with conditional edges and shared state**, not a flat ReAct "think → call tool → repeat" loop. We replicate that exactly:
 
 ```
                  ┌──────────────────────────────────────────────┐
@@ -144,74 +182,9 @@ LangGraph's value is modeling the flow as a **graph with conditional edges and s
                                                  └──────────┘
 ```
 
-**Shared state** flows through this graph as a single `AgentState` object (a `TypedDict` equivalent):
+**Shared state** flows through this graph as a single typed `AgentState` object — the conversation history, cached schema snapshot, the router's decision, the most recent query result (by id), the canvas objects produced this turn, any pending write awaiting confirmation, and the final reply. This is the LangGraph "shared state" pattern, in TypeScript.
 
-```typescript
-// src/lib/types.ts
-export interface AgentState {
-  sessionId: string;
-  dialect: Dialect;
-  schemaSnapshot: SchemaSnapshot | null;   // cached introspection
-  zenMode: boolean;                         // write toggle
-  messages: AgentMessage[];                 // conversation history
-  userInput: string;
-  routedAgents: AgentName[];                // router's decision
-  lastResultId?: string;                    // id into frame-cache
-  canvasObjects: CanvasObject[];            // artifacts to render
-  steps: { agent: AgentName; label: string; ts: number }[];  // live status
-  pendingWrite?: { pendingId: string; query: string; estimatedImpact: string } | null;
-  reply?: string;                           // final chat text
-  error?: string;
-}
-```
-
-The orchestrator (`runTurn`) implements the conditional edges:
-
-```typescript
-// src/lib/agents/orchestrator.ts (simplified)
-export async function runTurn(state: AgentState, cb: OrchestratorCallbacks) {
-  // 1. ROUTER — classify intent (single fast LLM call, structured JSON output)
-  const route = await runRouter(state);
-  state.routedAgents = route.agents;
-
-  // Short-circuit: no agents → just synthesize a conversational reply
-  if (route.agents.length === 0) {
-    const reply = await runSynthesis(state, [...], [], cb.emit);
-    return { ...state, reply };
-  }
-
-  // 2. SCHEMA agent (if routed) — answers structural questions from cache
-  if (route.agents.includes("schema")) {
-    const out = await runSchemaAgent(state);
-    // ... collect canvas objects + summary
-  }
-
-  // 3. SQL agent (if routed) — pass the downstream agents so it knows
-  //    whether to return raw rows (for EDA/Viz/ML) or may use aggregates
-  if (route.agents.includes("sql")) {
-    const downstream = route.agents.filter(a => a !== "sql");
-    const out = await runSqlAgent(state, downstream);
-
-    if (out.pending) {
-      // WRITE GATED — stop here, await user confirmation
-      const reply = await runSynthesis(state, [...], canvas, cb.emit);
-      return { ...state, reply, pendingWrite: out.pending };
-    }
-    if (out.result?.frameId) state.lastResultId = out.result.frameId;
-  }
-
-  // 4. EDA / Viz / ML — run in PARALLEL after a successful SELECT
-  const downstream = route.agents.filter(a => ["eda","viz","ml"].includes(a));
-  if (downstream.length && sqlRanSelect) {
-    await Promise.all(downstream.map(a => runAgent(a, state)));
-  }
-
-  // 5. SYNTHESIS — the only node that writes user-facing prose
-  //    Streams the reply token-by-token via SSE
-  const reply = await runSynthesis(state, agentSummaries, canvas, cb.emit);
-  return { ...state, reply, canvasObjects: canvas };
-}
-```
+The orchestrator (`runTurn`) implements the conditional edges: the **Router** classifies intent first. If it routes to **Schema**, that node answers from the cached snapshot. If it routes to **SQL**, that node generates and executes a single query — and if Zen mode is on and the statement is a write, it stops the graph and awaits user confirmation (the write is registered as pending, never auto-executed). After a successful SELECT, the **EDA / Viz / ML** nodes run **in parallel**. Finally, **Synthesis** — the only node that writes user-facing prose — streams the reply token-by-token.
 
 **This is a graph, not a loop.** Each node has one job, a small toolset, and a focused system prompt. The orchestrator decides which agents run — not the user, not the agents. Conditional edges route based on the router's classification. Multiple agents (EDA + Viz + ML) run in parallel after a SELECT. That's the LangGraph pattern, in TypeScript.
 
@@ -227,36 +200,6 @@ export async function runTurn(state: AgentState, cb: OrchestratorCallbacks) {
 | **ML** | Run OLS regression / k-means / linear-trend forecast | `frame-cache` get, pure-TS math | 1 call to pick the model |
 | **Synthesis** | Write the final user-facing reply (streamed) | agent summaries + canvas list | 1 streaming call |
 
-### Streaming without WebSockets
-
-The `/api/chat` route returns a **`text/event-stream`** response. As each agent works, the orchestrator emits SSE events:
-
-```
-data: {"type":"step","agent":"router","label":"Understanding your question…"}
-
-data: {"type":"step","agent":"sql","label":"Writing a SQL query…"}
-
-data: {"type":"sql","query":"SELECT ...","executed":true,"rowCount":5,"durationMs":3}
-
-data: {"type":"canvas","object":{"type":"table","columns":[...],"rows":[...]}}
-
-data: {"type":"step","agent":"viz","label":"Building a chart…"}
-
-data: {"type":"canvas","object":{"type":"chart","spec":{...}}}
-
-data: {"type":"token","text":"The top 5 "}
-
-data: {"type":"token","text":"products by sales "}
-
-data: {"type":"reply_done","reply":"The top 5 products by sales ..."}
-
-data: {"type":"done"}
-```
-
-The frontend reads this with a `fetch` + `ReadableStream` reader (not the native `EventSource` API, which only supports GET) and dispatches each event type to update the chat pane (steps, tokens) and canvas pane (objects) live.
-
-> **Note on streaming:** The z-ai SDK's `stream: true` doesn't yield OpenAI-style delta chunks reliably, so our `completeStream()` uses non-streaming `complete()` and re-chunks the result into ~3-word pseudo-tokens emitted with a 12ms delay. This preserves the live "typing" feel in the UI while staying robust.
-
 <br /><br />
 
 ## 🛡️ Zen Mode — The Safety-Critical Part
@@ -269,26 +212,6 @@ Treat this as non-negotiable, not a nice-to-have.
 4. The user sees three actions: **Confirm & execute**, **Dry-run (rollback)**, **Cancel**. Dry-runs execute inside a transaction that is immediately rolled back, so the user sees the affected row count without committing.
 5. **Every write resolution is audit-logged** — executed, rolled-back, cancelled, or failed — with the SQL text, timestamp, and row count.
 6. **No agent other than the SQL agent can construct or execute SQL** against the live connection.
-
-<br /><br />
-
-## 🎨 The Canvas Concept
-
-The canvas is a typed, ordered list of artifacts per session — not a chat bubble. It's a discriminated union shared between backend and frontend:
-
-```typescript
-// src/lib/types.ts
-export type CanvasObject =
-  | { type: "table"; columns: [...]; rows: [...]; totalRows?: number; truncated?: boolean }
-  | { type: "chart"; spec: VegaLiteSpec; caption?: string }           // rendered by react-vega
-  | { type: "sql"; query: string; executed: boolean; rowCount?: number; error?: string }
-  | { type: "eda_summary"; columns: EdaColumnStats[]; insights?: string[] }
-  | { type: "model_result"; modelType: string; metrics: Record<string, number>; predictions?: {...} }
-  | { type: "pending_write"; query: string; estimatedImpact: string; pendingId: string }
-  | { type: "error"; message: string };
-```
-
-The synthesis node appends to this list each turn. The frontend renders whatever's in it, in order. You can scroll back through previous charts and tables like a notebook, export tables to CSV, export charts to SVG/PNG, and copy SQL or message text.
 
 <br /><br />
 
@@ -382,68 +305,6 @@ SelectStar introspects the schema via `information_schema` (tables, columns, pri
 ### MySQL
 
 MySQL is wired into the architecture (the `DbConnection` interface and the connection-string parser recognize `mysql://`) but the driver isn't installed in this build. Adding it = install `mysql2` + implement one `MySqlConnection` class.
-
-<br /><br />
-
-## 🏗️ Project Structure
-
-```
-selectstar/
-├── prisma/
-│   └── schema.prisma              # Session, Message, CanvasObject, AuditLog
-├── scripts/
-│   └── seed-demo.ts               # seeds db/demo.db with e-commerce data
-├── src/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── connect/route.ts        # POST — open + ping + introspect
-│   │   │   ├── chat/route.ts           # POST — SSE stream (the agent turn)
-│   │   │   ├── confirm-write/route.ts  # POST — resolve a pending write
-│   │   │   ├── refresh-schema/route.ts # POST — re-introspect
-│   │   │   ├── sessions/route.ts       # GET — list recent sessions
-│   │   │   ├── sessions/[id]/route.ts  # GET/PATCH/DELETE a session
-│   │   │   ├── audit/route.ts          # GET — audit log for a session
-│   │   │   └── suggest/route.ts        # GET — suggested starter questions
-│   │   ├── layout.tsx
-│   │   └── page.tsx                    # decides: ConnectionScreen or AppShell
-│   ├── components/
-│   │   ├── logo.tsx                    # the [S*] SVG mark
-│   │   ├── connection-screen.tsx       # landing page (split-screen hero)
-│   │   ├── app-shell.tsx               # top bar + resizable two-pane layout
-│   │   ├── chat-pane.tsx               # chat with streaming, regenerate, stop
-│   │   ├── canvas-pane.tsx             # canvas with clear + scroll-to-bottom
-│   │   ├── theme-provider.tsx
-│   │   ├── theme-toggle.tsx
-│   │   └── canvas/
-│   │       ├── canvas-object.tsx       # dispatcher
-│   │       ├── canvas-table.tsx        # table + CSV export
-│   │       ├── canvas-chart.tsx        # Vega-Lite + SVG/PNG export
-│   │       ├── canvas-sql.tsx          # SQL + copy button
-│   │       ├── canvas-eda.tsx          # stats + null-percentage bars
-│   │       ├── canvas-model.tsx        # ML metrics + predictions
-│   │       ├── canvas-pending-write.tsx# confirm / dry-run / cancel
-│   │       └── canvas-error.tsx
-│   └── lib/
-│       ├── types.ts                    # CanvasObject union, AgentState, StreamEvent
-│       ├── llm.ts                      # shared LLM wrapper (complete/Json/Stream + retry)
-│       ├── db-connection.ts            # DbConnection interface + SQLite/Postgres impls
-│       ├── frame-cache.ts              # in-memory dataframe cache
-│       ├── pending-writes.ts           # Zen-mode write registry
-│       ├── session.ts                  # Prisma session/message/canvas persistence
-│       ├── store.ts                    # Zustand client store
-│       ├── chat-client.ts             # SSE stream reader
-│       └── agents/
-│           ├── orchestrator.ts         # the graph (runTurn)
-│           ├── router.ts               # classifies intent
-│           ├── schema.ts               # answers schema questions
-│           ├── sql.ts                  # writes & executes SQL (Zen-gated)
-│           ├── eda.ts                  # statistical profiling
-│           ├── viz.ts                  # Vega-Lite spec generation
-│           ├── ml.ts                   # OLS / k-means / forecast
-│           ├── synthesis.ts            # writes the final reply (streamed)
-│           └── schema-utils.ts         # relevance filtering + suggested questions
-└── package.json
-```
 
 <br /><br />
 
