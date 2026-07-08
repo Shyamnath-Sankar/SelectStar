@@ -278,40 +278,123 @@ class SqliteConnection implements DbConnection {
 
 class PostgresConnection implements DbConnection {
   readonly dialect: Dialect = "postgres";
-  private pool: import("pg").Pool;
+  private pool: import("pg").Pool | null = null;
+  private connStr: string;
 
   constructor(connStr: string) {
+    this.connStr = connStr;
+  }
+
+  /**
+   * Create the Pool. Called once after ping() determines SSL support.
+   */
+  private ensurePool(useSSL: boolean) {
+    if (this.pool) return;
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Pool } = require("pg");
     this.pool = new Pool({
-      connectionString: connStr,
+      connectionString: this.connStr,
       max: 4,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000, // fail fast on unreachable hosts
+      connectionTimeoutMillis: 12000,
+      ssl: useSSL ? { rejectUnauthorized: false } : false,
     });
   }
 
   private async getClient() {
+    if (!this.pool) throw new Error("Connection not established — call ping() first.");
     return this.pool.connect();
   }
 
   /**
-   * Force a real round-trip to the server. pg's Pool is lazy, so the
-   * constructor never throws — this is where DNS/auth/TLS/port errors
-   * actually surface. A short connect-timeout keeps failures snappy.
+   * Probe the server with a disposable pg.Client to verify connectivity AND
+   * detect SSL support, then build the Pool once with the correct setting.
+   *
+   * Why Client instead of Pool?  Pool.connect() is lazy and manages its own
+   * internal queue — rapidly destroying and recreating Pools (SSL → no-SSL
+   * fallback) leaves zombie connections and hangs on some OS/driver combos.
+   * A bare Client is a single socket with no lifecycle baggage.
    */
   async ping(): Promise<void> {
-    const client = await this.pool.connect();
+    const TIMEOUT_MS = 15_000;
+
+    const probe = async (useSSL: boolean): Promise<void> => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { Client } = require("pg");
+      const client = new Client({
+        connectionString: this.connStr,
+        connectionTimeoutMillis: 10_000,
+        ssl: useSSL ? { rejectUnauthorized: false } : false,
+      });
+      try {
+        await client.connect();
+        await client.query("SELECT 1");
+      } finally {
+        client.end().catch(() => {});
+      }
+    };
+
+    const withTimeout = <T>(p: Promise<T>): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(
+              `Connection timed out after ${TIMEOUT_MS / 1000}s — the host may be unreachable or a firewall is blocking port 5432`
+            )),
+            TIMEOUT_MS
+          )
+        ),
+      ]);
+
+    // Determine whether the user explicitly set ssl in the connection string.
+    const userSetSSL = /[?&]ssl(mode)?=/i.test(this.connStr);
+
+    if (userSetSSL) {
+      // Respect the user's explicit setting — don't second-guess it.
+      await withTimeout(probe(false)); // pg parses sslmode from the URL itself
+      this.ensurePool(false);          // let the URL's sslmode drive the Pool too
+      return;
+    }
+
+    // No explicit ssl param → try SSL first, fall back to plain.
     try {
-      await client.query("SELECT 1");
-    } finally {
-      client.release();
+      console.log("[pg] Probing with SSL (rejectUnauthorized:false)…");
+      await withTimeout(probe(true));
+      console.log("[pg] SSL probe succeeded.");
+      this.ensurePool(true);
+    } catch (e) {
+      const msg = (e as Error).message ?? "";
+      const isSSLError = /ssl|tls|certificate|EPROTO|self.signed|does not support/i.test(msg);
+      if (isSSLError) {
+        console.log("[pg] SSL not supported, retrying without SSL…");
+        try {
+          await withTimeout(probe(false));
+          console.log("[pg] Plain connection succeeded.");
+          this.ensurePool(false);
+        } catch (e2) {
+          throw e2; // non-SSL also failed — throw that error
+        }
+      } else {
+        throw e; // not an SSL issue — auth, DNS, timeout, etc.
+      }
     }
   }
 
   async introspect(): Promise<SchemaSnapshot> {
+    const MAX_TABLES = 200;
+    const TIMEOUT_MS = 30_000;
     const client = await this.getClient();
+
+    const timeout = setTimeout(() => {
+      console.warn("[pg] Introspection approaching timeout — releasing client.");
+      client.release(true); // force-destroy
+    }, TIMEOUT_MS);
+
     try {
+      console.log("[pg] Introspecting schema…");
+
+      // 1. Get tables (capped).
       const tablesRes = await client.query<{
         table_schema: string; table_name: string;
       }>(`
@@ -320,83 +403,133 @@ class PostgresConnection implements DbConnection {
         WHERE table_schema NOT IN ('pg_catalog','information_schema')
           AND table_type = 'BASE TABLE'
         ORDER BY table_schema, table_name
+        LIMIT ${MAX_TABLES}
       `);
+      console.log(`[pg] Found ${tablesRes.rows.length} tables (cap: ${MAX_TABLES}).`);
 
-      const tableInfos: TableInfo[] = [];
-      for (const t of tablesRes.rows) {
-        // Columns — this is the critical one; if it fails, skip the table.
-        let colsRes: { rows: { column_name: string; data_type: string; is_nullable: string }[] };
-        try {
-          colsRes = await client.query<{
-            column_name: string; data_type: string; is_nullable: string;
-          }>(`
-            SELECT column_name, data_type, is_nullable
-            FROM information_schema.columns
-            WHERE table_schema=$1 AND table_name=$2
-            ORDER BY ordinal_position
-          `, [t.table_schema, t.table_name]);
-        } catch {
-          continue; // permission denied on this table's metadata — skip it
+      if (tablesRes.rows.length === 0) {
+        return { dialect: "postgres", database: undefined, tables: [], introspectedAt: new Date().toISOString() };
+      }
+
+      // Build a schema/table pair filter for batch queries.
+      const pairs = tablesRes.rows;
+      const schemaNames = [...new Set(pairs.map(p => p.table_schema))];
+      const tableNames = [...new Set(pairs.map(p => p.table_name))];
+
+      // 2. Batch columns — one query for ALL tables.
+      const colsMap = new Map<string, { column_name: string; data_type: string; is_nullable: string }[]>();
+      try {
+        const colsRes = await client.query<{
+          table_schema: string; table_name: string;
+          column_name: string; data_type: string; is_nullable: string;
+        }>(`
+          SELECT table_schema, table_name, column_name, data_type, is_nullable
+          FROM information_schema.columns
+          WHERE table_schema = ANY($1) AND table_name = ANY($2)
+          ORDER BY table_schema, table_name, ordinal_position
+        `, [schemaNames, tableNames]);
+        for (const r of colsRes.rows) {
+          const key = `${r.table_schema}.${r.table_name}`;
+          if (!colsMap.has(key)) colsMap.set(key, []);
+          colsMap.get(key)!.push(r);
         }
+      } catch (e) {
+        console.warn("[pg] Batch column query failed:", (e as Error).message);
+      }
+      console.log("[pg] Columns fetched.");
 
-        // Primary keys — best-effort.
-        let pkCols = new Set<string>();
-        try {
-          const pkRes = await client.query<{ column_name: string }>(`
-            SELECT kcu.column_name
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-              ON tc.constraint_name=kcu.constraint_name AND tc.table_schema=kcu.table_schema
-            WHERE tc.constraint_type='PRIMARY KEY' AND tc.table_schema=$1 AND tc.table_name=$2
-          `, [t.table_schema, t.table_name]);
-          pkCols = new Set(pkRes.rows.map((r) => r.column_name));
-        } catch { /* permission denied — leave pkCols empty */ }
+      // 3. Batch primary keys.
+      const pkMap = new Map<string, Set<string>>();
+      try {
+        const pkRes = await client.query<{
+          table_schema: string; table_name: string; column_name: string;
+        }>(`
+          SELECT tc.table_schema, tc.table_name, kcu.column_name
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu
+            ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+          WHERE tc.constraint_type = 'PRIMARY KEY'
+            AND tc.table_schema = ANY($1) AND tc.table_name = ANY($2)
+        `, [schemaNames, tableNames]);
+        for (const r of pkRes.rows) {
+          const key = `${r.table_schema}.${r.table_name}`;
+          if (!pkMap.has(key)) pkMap.set(key, new Set());
+          pkMap.get(key)!.add(r.column_name);
+        }
+      } catch { /* permission denied */ }
+      console.log("[pg] Primary keys fetched.");
 
-        // Foreign keys — best-effort.
-        const fkMap = new Map<string, { table: string; column: string }>();
-        try {
-          const fkRes = await client.query<{
-            column_name: string; ref_table: string; ref_column: string;
-          }>(`
-            SELECT kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-              ON tc.constraint_name=kcu.constraint_name AND tc.table_schema=kcu.table_schema
-            JOIN information_schema.constraint_column_usage ccu
-              ON tc.constraint_name=ccu.constraint_name AND tc.table_schema=ccu.constraint_schema
-            WHERE tc.constraint_type='FOREIGN KEY' AND tc.table_schema=$1 AND tc.table_name=$2
-          `, [t.table_schema, t.table_name]);
-          for (const r of fkRes.rows) fkMap.set(r.column_name, { table: r.ref_table, column: r.ref_column });
-        } catch { /* permission denied — leave fkMap empty */ }
+      // 4. Batch foreign keys.
+      const fkMap = new Map<string, Map<string, { table: string; column: string }>>();
+      try {
+        const fkRes = await client.query<{
+          table_schema: string; table_name: string;
+          column_name: string; ref_table: string; ref_column: string;
+        }>(`
+          SELECT tc.table_schema, tc.table_name,
+                 kcu.column_name, ccu.table_name AS ref_table, ccu.column_name AS ref_column
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu
+            ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+          JOIN information_schema.constraint_column_usage ccu
+            ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.constraint_schema
+          WHERE tc.constraint_type = 'FOREIGN KEY'
+            AND tc.table_schema = ANY($1) AND tc.table_name = ANY($2)
+        `, [schemaNames, tableNames]);
+        for (const r of fkRes.rows) {
+          const key = `${r.table_schema}.${r.table_name}`;
+          if (!fkMap.has(key)) fkMap.set(key, new Map());
+          fkMap.get(key)!.set(r.column_name, { table: r.ref_table, column: r.ref_column });
+        }
+      } catch { /* permission denied */ }
+      console.log("[pg] Foreign keys fetched.");
 
-        // Row count — best-effort with a per-statement timeout so one slow
-        // table on a remote database doesn't block the whole introspection.
-        let rowCount = 0;
-        try {
-          await client.query("SET LOCAL statement_timeout = '3s'");
-          const r = await client.query(`SELECT COUNT(*)::int c FROM ${quoteIdent(t.table_schema)}.${quoteIdent(t.table_name)}`);
-          rowCount = r.rows[0]?.c ?? 0;
-        } catch { /* timeout / permission denied — leave 0 */ }
+      // 5. Approximate row counts from pg_stat — instant, no COUNT(*).
+      const rowCountMap = new Map<string, number>();
+      try {
+        const rcRes = await client.query<{
+          schemaname: string; relname: string; n_live_tup: string;
+        }>(`
+          SELECT schemaname, relname, n_live_tup
+          FROM pg_stat_user_tables
+          WHERE schemaname = ANY($1) AND relname = ANY($2)
+        `, [schemaNames, tableNames]);
+        for (const r of rcRes.rows) {
+          rowCountMap.set(`${r.schemaname}.${r.relname}`, parseInt(r.n_live_tup, 10) || 0);
+        }
+      } catch { /* permission denied — leave 0 */ }
+      console.log("[pg] Row counts fetched.");
+
+      // 6. Assemble results.
+      const tableInfos: TableInfo[] = [];
+      for (const t of pairs) {
+        const key = `${t.table_schema}.${t.table_name}`;
+        const cols = colsMap.get(key);
+        if (!cols || cols.length === 0) continue; // no column info — skip
+
+        const pks = pkMap.get(key) ?? new Set<string>();
+        const fks = fkMap.get(key) ?? new Map<string, { table: string; column: string }>();
 
         tableInfos.push({
           name: t.table_name,
           schema: t.table_schema,
-          columns: colsRes.rows.map((c) => {
-            const fk = fkMap.get(c.column_name);
+          columns: cols.map((c) => {
+            const fk = fks.get(c.column_name);
             return {
               name: c.column_name,
               dataType: c.data_type,
               nullable: c.is_nullable === "YES",
-              isPrimaryKey: pkCols.has(c.column_name),
+              isPrimaryKey: pks.has(c.column_name),
               isForeignKey: !!fk,
               references: fk ?? null,
             };
           }),
-          rowCount,
+          rowCount: rowCountMap.get(key) ?? 0,
           description: inferTableDescription(t.table_name),
         });
       }
 
+      console.log(`[pg] Introspection complete: ${tableInfos.length} tables.`);
       return {
         dialect: "postgres",
         database: undefined,
@@ -404,6 +537,7 @@ class PostgresConnection implements DbConnection {
         introspectedAt: new Date().toISOString(),
       };
     } finally {
+      clearTimeout(timeout);
       client.release();
     }
   }
@@ -449,22 +583,22 @@ class PostgresConnection implements DbConnection {
   async detectCanWrite(): Promise<boolean> {
     const client = await this.getClient();
     try {
+      // Use has_database_privilege for a database-level check (safer than
+      // has_table_privilege which needs a specific table name).
       const res = await client.query(
-        `SELECT has_table_privilege(current_user, current_database(), 'INSERT') AS can_write
-         UNION ALL
-         SELECT has_table_privilege(current_user, current_database(), 'UPDATE')`
+        `SELECT has_database_privilege(current_user, current_database(), 'CREATE') AS can_write`
       );
-      return res.rows.some((r) => r.can_write === true);
+      return res.rows[0]?.can_write === true;
     } catch {
-      // Fallback: assume writable; the toggle still requires explicit confirmation.
-      return true;
+      // Fallback: assume read-only; the user can enable Zen mode manually.
+      return false;
     } finally {
       client.release();
     }
   }
 
   close(): void {
-    try { void this.pool.end(); } catch { /* ignore */ }
+    try { if (this.pool) void this.pool.end(); } catch { /* ignore */ }
   }
 }
 
