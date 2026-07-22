@@ -10,6 +10,7 @@
  */
 import type { Dialect, SchemaSnapshot, TableInfo, ColumnInfo } from "@/lib/types";
 import type Database from "better-sqlite3";
+import { getClassicConnection, reopenClassicFromDisk } from "@/lib/classic-registry";
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -123,6 +124,20 @@ export async function openConnection(sessionId: string, connStr: string): Promis
   const existing = connections.get(sessionId);
   if (existing) return existing;
 
+  // Classic mode: the connection string is a "classic://<path>" URI pointing
+  // at the on-disk copy of the uploaded file. Re-hydrate the in-memory dataset.
+  if (connStr.startsWith("classic://")) {
+    const filePath = connStr.slice("classic://".length);
+    const conn = await reopenClassicFromDisk(sessionId, filePath);
+    if (!conn) {
+      throw new Error(
+        "Couldn't re-open this Classic dataset — the uploaded file may have been removed. Please re-upload the CSV/XLSX."
+      );
+    }
+    connections.set(sessionId, conn);
+    return conn;
+  }
+
   const parsed = parseConnectionString(connStr);
   let conn: DbConnection;
   if (parsed.dialect === "sqlite") {
@@ -137,7 +152,11 @@ export async function openConnection(sessionId: string, connStr: string): Promis
 }
 
 export function getConnection(sessionId: string): DbConnection | undefined {
-  return connections.get(sessionId);
+  // Check the live-DB registry first; fall back to the classic in-memory
+  // registry (classic connections are NOT stored in `connections` because
+  // they're created via /api/classic/upload which calls registerClassicDataset
+  // directly).
+  return connections.get(sessionId) ?? getClassicConnection(sessionId);
 }
 
 export function closeConnection(sessionId: string): void {

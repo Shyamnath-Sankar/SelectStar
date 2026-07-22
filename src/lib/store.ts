@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { CanvasObject, SchemaSnapshot, AgentName } from "@/lib/types";
+import type { AppMode, CanvasObject, SchemaSnapshot, AgentName } from "@/lib/types";
 
 export interface ChatMessage {
   id: string;
@@ -27,6 +27,7 @@ export interface PendingWriteState {
 interface SessionStore {
   // Connection / session
   sessionId: string | null;
+  mode: AppMode;
   label: string;
   dialect: string;
   schema: SchemaSnapshot | null;
@@ -56,6 +57,7 @@ interface SessionStore {
   setConnectError: (e: string | null) => void;
   connect: (data: {
     sessionId: string;
+    mode?: AppMode;
     label: string;
     dialect: string;
     schema: SchemaSnapshot;
@@ -65,6 +67,7 @@ interface SessionStore {
   reset: () => void;
   loadSession: (data: {
     sessionId: string;
+    mode?: AppMode;
     label: string;
     dialect: string;
     schema: SchemaSnapshot | null;
@@ -91,6 +94,7 @@ interface SessionStore {
 
 export const useSession = create<SessionStore>((set) => ({
   sessionId: null,
+  mode: "sql",
   label: "",
   dialect: "sqlite",
   schema: null,
@@ -111,6 +115,7 @@ export const useSession = create<SessionStore>((set) => ({
   connect: (data) =>
     set({
       sessionId: data.sessionId,
+      mode: data.mode ?? "sql",
       label: data.label,
       dialect: data.dialect,
       schema: data.schema,
@@ -126,6 +131,7 @@ export const useSession = create<SessionStore>((set) => ({
   reset: () =>
     set({
       sessionId: null,
+      mode: "sql",
       label: "",
       schema: null,
       canWrite: false,
@@ -140,6 +146,7 @@ export const useSession = create<SessionStore>((set) => ({
   loadSession: (data) =>
     set({
       sessionId: data.sessionId,
+      mode: data.mode ?? "sql",
       label: data.label,
       dialect: data.dialect,
       schema: data.schema,
@@ -195,10 +202,19 @@ export const useSession = create<SessionStore>((set) => ({
     return userContent;
   },
   addPendingWrite: (pw) => set((s) => ({ pendingWrites: [...s.pendingWrites, pw] })),
+  // ZEN-MODE BUG FIX: previously the pending_write canvas card stayed "PENDING"
+  // forever after the user clicked Confirm/Dry-run/Cancel. The store only
+  // patched the separate pendingWrites[] array, not the canvas[] entry. Now
+  // we patch both — the canvas card reflects the new status immediately.
   resolvePendingWrite: (pendingId, status, rowsAffected, error) =>
     set((s) => ({
       pendingWrites: s.pendingWrites.map((p) =>
         p.pendingId === pendingId ? { ...p, status, rowsAffected, error } : p
+      ),
+      canvas: s.canvas.map((obj) =>
+        obj.type === "pending_write" && obj.pendingId === pendingId
+          ? { ...obj, status, rowsAffected, error }
+          : obj
       ),
     })),
   setAuditCount: (n) => set({ auditCount: n }),

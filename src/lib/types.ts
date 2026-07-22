@@ -35,7 +35,10 @@ export interface SchemaSnapshot {
   introspectedAt: string; // ISO timestamp
 }
 
-export type Dialect = "sqlite" | "postgres" | "mysql";
+export type Dialect = "sqlite" | "postgres" | "mysql" | "csv" | "xlsx";
+
+/** Top-level mode: live SQL database, or Classic (CSV/XLSX) file analysis. */
+export type AppMode = "sql" | "classic";
 
 // ---------------------------------------------------------------------------
 // Canvas objects — the discriminated union rendered in the canvas pane.
@@ -156,6 +159,8 @@ export interface AgentMessage {
 export interface AgentState {
   sessionId: string;
   dialect: Dialect;
+  /** "sql" live DB or "classic" CSV/XLSX file. Drives agent prompts. */
+  mode: AppMode;
   schemaSnapshot: SchemaSnapshot | null;
   zenMode: boolean;
   messages: AgentMessage[];

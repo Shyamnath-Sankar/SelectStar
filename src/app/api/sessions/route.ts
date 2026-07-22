@@ -20,7 +20,7 @@ export async function GET() {
       orderBy: { updatedAt: "desc" },
       take: 20,
       select: {
-        id: true, label: true, dialect: true, status: true,
+        id: true, label: true, dialect: true, mode: true, status: true,
         canWrite: true, zenMode: true, createdAt: true, updatedAt: true,
       },
     });

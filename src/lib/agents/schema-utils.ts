@@ -86,25 +86,48 @@ export function suggestStarterQuestions(snapshot: SchemaSnapshot): string[] {
   const out: string[] = [];
   const find = (kw: string) => snapshot.tables.find((t) => t.name.toLowerCase().includes(kw));
 
+  // Classic mode (single-table CSV/XLSX dataset) — generic exploratory prompts.
+  if (snapshot.tables.length === 1) {
+    const t = snapshot.tables[0];
+    const numericCols = t.columns.filter((c) => isNumericType(c.dataType));
+    const textCols = t.columns.filter((c) => !isNumericType(c.dataType) && c.dataType !== "date");
+    const dateCols = t.columns.filter((c) => c.dataType === "date");
+
+    out.push(`How many rows are in this dataset, and what does each column look like?`);
+    if (numericCols.length >= 1) {
+      out.push(`Give me a statistical summary of ${numericCols.slice(0, 2).map((c) => `\`${c.name}\``).join(" and ")}.`);
+    }
+    if (textCols.length >= 1 && numericCols.length >= 1) {
+      out.push(`What are the top values in \`${textCols[0].name}\` by total \`${numericCols[0].name}\`?`);
+    }
+    if (numericCols.length >= 1) {
+      out.push(`Chart the distribution of \`${numericCols[0].name}\`.`);
+    } else if (textCols.length >= 1) {
+      out.push(`Chart the distribution of \`${textCols[0].name}\`.`);
+    }
+    if (dateCols.length >= 1 && numericCols.length >= 1) {
+      out.push(`Plot \`${numericCols[0].name}\` over \`${dateCols[0].name}\`.`);
+    }
+    out.push(`Enable Zen mode above, then ask me to "delete rows where \`${numericCols[0]?.name || textCols[0]?.name || "column"}\` is null".`);
+    return out.slice(0, 5);
+  }
+
   const orders = find("order");
   const customers = find("customer");
   const products = find("product");
 
-  if (orders) {
-    out.push(`How many orders are there, broken down by status?`);
-  }
-  if (customers) {
-    out.push(`Who are the top 10 customers by order count?`);
-  }
-  if (orders && customers) {
-    out.push(`Show me the distribution of order totals.`);
-  }
-  if (products) {
-    out.push(`Which products have the lowest stock?`);
-  }
-  // Always include a schema-level question and an EDA prompt.
+  if (orders) out.push(`How many orders are there, broken down by status?`);
+  if (customers) out.push(`Who are the top 10 customers by order count?`);
+  if (orders && customers) out.push(`Show me the distribution of order totals.`);
+  if (products) out.push(`Which products have the lowest stock?`);
   if (out.length < 3) out.push(`What tables are in this database?`);
   if (out.length < 4) out.push(`Give me a statistical summary of the largest table.`);
 
   return out.slice(0, 4);
+}
+
+function isNumericType(dt?: string): boolean {
+  if (!dt) return false;
+  const d = dt.toLowerCase();
+  return ["number", "integer", "int", "real", "float", "double", "decimal", "numeric"].some((t) => d.includes(t));
 }

@@ -25,7 +25,10 @@ Style:
 - Reference charts/tables that appear in the canvas as "the chart on the right"
   or "the table above".
 - If a write was gated behind Zen-mode confirmation, tell the user to review
-  and confirm it in the canvas.`;
+  and confirm it in the canvas.
+- If this is a Classic-mode session (CSV/XLSX upload), and the user asked to
+  edit the data, mention they can download the updated file from the top bar
+  or edit it directly in the Spreadsheet tab.`;
 
 export async function runSynthesis(
   state: AgentState,

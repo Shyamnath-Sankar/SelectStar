@@ -17,16 +17,23 @@ model Session {
   id              String   @id @default(cuid())
   // Pretty label, e.g. "Demo E-commerce DB" or derived from the connection string.
   label           String   @default("Untitled session")
+  // "sql" — a live database connection (SQLite/Postgres). The classic SelectStar.
+  // "classic" — a CSV/XLSX file uploaded to SelectStar Classic.
+  mode            String   @default("sql")
   // Dialect detected from the connection string: "sqlite" | "postgres" | "mysql"
+  // For classic mode, the file type: "csv" | "xlsx".
   dialect         String   @default("sqlite")
   // The raw connection string the user pasted. Stored so the session can be
   // re-opened. In a real deployment this should be encrypted at rest.
+  // For classic mode, this holds a "classic://<path>" URI to the on-disk file.
   connectionString String
   // Whether the connected role appears to have write privileges.
+  // For classic mode this is always true (the user owns the in-memory data).
   canWrite        Boolean  @default(false)
   // Per-session Zen-mode (write) toggle. Always off on new sessions.
   zenMode         Boolean  @default(false)
   // Compact JSON of the introspected schema snapshot (tables/columns/keys).
+  // For classic mode, this is a single-table snapshot derived from the file header.
   schemaSnapshot  String?
   // Human-readable status: "connecting" | "connected" | "error"
   status          String   @default("connecting")

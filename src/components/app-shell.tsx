@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
-import { Database, Shield, ShieldAlert, RefreshCw, ListTree, Loader2, ScrollText, MessageSquare, LayoutDashboard } from "lucide-react";
+import { Database, Shield, ShieldAlert, RefreshCw, ListTree, Loader2, ScrollText, MessageSquare, LayoutDashboard, FileSpreadsheet, Download } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -18,10 +18,11 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export function AppShell() {
-  const { sessionId, schema, canWrite, zenMode, setZenMode, dialect } = useSession();
+  const { sessionId, schema, canWrite, zenMode, setZenMode, dialect, mode } = useSession();
   const [schemaOpen, setSchemaOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const isMobile = useIsMobile();
   const [mobileTab, setMobileTab] = useState<"chat" | "canvas">("chat");
   const canvasCount = useSession((s) => s.canvas.length);
@@ -66,6 +67,33 @@ export function AppShell() {
     }
   }
 
+  async function downloadEditedFile(format: "csv" | "xlsx") {
+    if (!sessionId) return;
+    setDownloading(true);
+    try {
+      const res = await fetch(`/api/classic/download?sessionId=${encodeURIComponent(sessionId)}&format=${format}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Download failed");
+      }
+      const blob = await res.blob();
+      const safe = (useSession.getState().label || "selectstar-classic").replace(/[^a-zA-Z0-9_-]+/g, "_");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safe}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Downloaded ${format.toUpperCase()}.`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       {/* Top bar */}
@@ -75,10 +103,13 @@ export function AppShell() {
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="font-semibold text-sm leading-none">SelectStar</span>
-              <Badge variant="outline" className="text-[9px] h-4 px-1 uppercase tracking-wide">{dialect}</Badge>
+              {mode === "classic" ? (
+                <Badge variant="outline" className="text-[9px] h-4 px-1 uppercase tracking-wide text-primary border-primary/40 bg-primary/8">Classic</Badge>
+              ) : (
+                <Badge variant="outline" className="text-[9px] h-4 px-1 uppercase tracking-wide">{dialect}</Badge>
+              )}
             </div>
           </div>
-          {/* Connection status dot */}
           <div className="flex items-center gap-1 ml-1" title="Connected">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-60 animate-ping" />
@@ -115,6 +146,33 @@ export function AppShell() {
         )}
 
         <div className="h-5 w-px bg-border mx-0.5" />
+
+        {/* Download buttons (Classic mode only) */}
+        {mode === "classic" && (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              disabled={downloading}
+              onClick={() => downloadEditedFile("csv")}
+              title="Download the (possibly edited) dataset as CSV"
+            >
+              <Download className="h-3.5 w-3.5" /> CSV
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              disabled={downloading}
+              onClick={() => downloadEditedFile("xlsx")}
+              title="Download the (possibly edited) dataset as XLSX"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" /> XLSX
+            </Button>
+            <div className="h-5 w-px bg-border mx-0.5" />
+          </>
+        )}
 
         <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setSchemaOpen(true)}>
           <ListTree className="h-3.5 w-3.5" /> Schema

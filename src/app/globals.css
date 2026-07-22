@@ -79,39 +79,115 @@
   --sidebar-ring: oklch(0.45 0.09 185);
 }
 
-/* Dark theme — premium near-black with the same teal accent */
+/* Improved Dark theme — softer near-black (less harsh on the eyes),
+   brighter teal accent for contrast, more distinct muted-foreground,
+   subtle elevation via card vs. background separation. */
 .dark {
-  --background: oklch(0.155 0.008 200);
-  --foreground: oklch(0.96 0.005 185);
-  --card: oklch(0.205 0.01 200);
-  --card-foreground: oklch(0.96 0.005 185);
-  --popover: oklch(0.22 0.012 200);
-  --popover-foreground: oklch(0.96 0.005 185);
-  --primary: oklch(0.7 0.11 185);
+  --background: oklch(0.18 0.008 200);
+  --foreground: oklch(0.97 0.005 185);
+  --card: oklch(0.225 0.012 200);
+  --card-foreground: oklch(0.97 0.005 185);
+  --popover: oklch(0.245 0.014 200);
+  --popover-foreground: oklch(0.97 0.005 185);
+  --primary: oklch(0.75 0.13 185);
   --primary-foreground: oklch(0.16 0.02 200);
-  --secondary: oklch(0.27 0.012 200);
-  --secondary-foreground: oklch(0.96 0.005 185);
-  --muted: oklch(0.255 0.01 200);
-  --muted-foreground: oklch(0.7 0.012 190);
-  --accent: oklch(0.32 0.04 185);
-  --accent-foreground: oklch(0.92 0.03 185);
-  --destructive: oklch(0.7 0.19 22);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 13%);
-  --ring: oklch(0.7 0.11 185);
-  --chart-1: oklch(0.7 0.11 185);
-  --chart-2: oklch(0.72 0.15 40);
-  --chart-3: oklch(0.7 0.14 300);
-  --chart-4: oklch(0.72 0.15 145);
-  --chart-5: oklch(0.68 0.18 15);
-  --sidebar: oklch(0.205 0.01 200);
-  --sidebar-foreground: oklch(0.96 0.005 185);
-  --sidebar-primary: oklch(0.7 0.11 185);
+  --secondary: oklch(0.29 0.014 200);
+  --secondary-foreground: oklch(0.97 0.005 185);
+  --muted: oklch(0.275 0.012 200);
+  --muted-foreground: oklch(0.74 0.014 190);
+  --accent: oklch(0.34 0.045 185);
+  --accent-foreground: oklch(0.93 0.035 185);
+  --destructive: oklch(0.72 0.2 22);
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.75 0.13 185);
+  --chart-1: oklch(0.75 0.13 185);
+  --chart-2: oklch(0.74 0.16 40);
+  --chart-3: oklch(0.72 0.15 300);
+  --chart-4: oklch(0.74 0.16 145);
+  --chart-5: oklch(0.7 0.19 15);
+  --sidebar: oklch(0.225 0.012 200);
+  --sidebar-foreground: oklch(0.97 0.005 185);
+  --sidebar-primary: oklch(0.75 0.13 185);
   --sidebar-primary-foreground: oklch(0.16 0.02 200);
-  --sidebar-accent: oklch(0.32 0.04 185);
-  --sidebar-accent-foreground: oklch(0.92 0.03 185);
-  --sidebar-border: oklch(1 0 0 / 9%);
-  --sidebar-ring: oklch(0.7 0.11 185);
+  --sidebar-accent: oklch(0.34 0.045 185);
+  --sidebar-accent-foreground: oklch(0.93 0.035 185);
+  --sidebar-border: oklch(1 0 0 / 11%);
+  --sidebar-ring: oklch(0.75 0.13 185);
+}
+
+/* ---------------------------------------------------------------
+   SelectStar Classic mode — amber/orange palette to visually
+   distinguish CSV/XLSX analysis from live SQL databases.
+   The .mode-classic class is applied to <html> by ModeClassSync.
+   --------------------------------------------------------------- */
+.mode-classic {
+  --background: oklch(0.99 0.005 60);
+  --foreground: oklch(0.20 0.02 50);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.20 0.02 50);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.20 0.02 50);
+  --primary: oklch(0.62 0.16 50);
+  --primary-foreground: oklch(0.99 0.005 60);
+  --secondary: oklch(0.96 0.02 60);
+  --secondary-foreground: oklch(0.30 0.04 50);
+  --muted: oklch(0.965 0.015 60);
+  --muted-foreground: oklch(0.50 0.03 55);
+  --accent: oklch(0.94 0.04 55);
+  --accent-foreground: oklch(0.35 0.10 45);
+  --destructive: oklch(0.58 0.22 25);
+  --border: oklch(0.90 0.02 60);
+  --input: oklch(0.92 0.02 60);
+  --ring: oklch(0.62 0.16 50);
+  --chart-1: oklch(0.65 0.16 50);
+  --chart-2: oklch(0.55 0.13 30);
+  --chart-3: oklch(0.62 0.14 90);
+  --chart-4: oklch(0.60 0.13 145);
+  --chart-5: oklch(0.55 0.15 15);
+  --sidebar: oklch(0.985 0.006 60);
+  --sidebar-foreground: oklch(0.20 0.02 50);
+  --sidebar-primary: oklch(0.62 0.16 50);
+  --sidebar-primary-foreground: oklch(0.99 0.005 60);
+  --sidebar-accent: oklch(0.94 0.04 55);
+  --sidebar-accent-foreground: oklch(0.35 0.10 45);
+  --sidebar-border: oklch(0.90 0.02 60);
+  --sidebar-ring: oklch(0.62 0.16 50);
+}
+
+/* Classic dark theme — warm dark brown-black with amber accent */
+.mode-classic.dark {
+  --background: oklch(0.19 0.012 50);
+  --foreground: oklch(0.96 0.02 60);
+  --card: oklch(0.235 0.018 50);
+  --card-foreground: oklch(0.96 0.02 60);
+  --popover: oklch(0.245 0.02 50);
+  --popover-foreground: oklch(0.96 0.02 60);
+  --primary: oklch(0.78 0.15 55);
+  --primary-foreground: oklch(0.18 0.03 50);
+  --secondary: oklch(0.30 0.018 50);
+  --secondary-foreground: oklch(0.96 0.02 60);
+  --muted: oklch(0.28 0.015 50);
+  --muted-foreground: oklch(0.72 0.02 60);
+  --accent: oklch(0.36 0.06 50);
+  --accent-foreground: oklch(0.92 0.06 55);
+  --destructive: oklch(0.72 0.2 22);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.78 0.15 55);
+  --chart-1: oklch(0.78 0.15 55);
+  --chart-2: oklch(0.72 0.16 30);
+  --chart-3: oklch(0.72 0.15 90);
+  --chart-4: oklch(0.74 0.15 145);
+  --chart-5: oklch(0.68 0.18 15);
+  --sidebar: oklch(0.235 0.018 50);
+  --sidebar-foreground: oklch(0.96 0.02 60);
+  --sidebar-primary: oklch(0.78 0.15 55);
+  --sidebar-primary-foreground: oklch(0.18 0.03 50);
+  --sidebar-accent: oklch(0.36 0.06 50);
+  --sidebar-accent-foreground: oklch(0.92 0.06 55);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.78 0.15 55);
 }
 
 @layer base {

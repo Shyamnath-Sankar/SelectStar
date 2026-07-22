@@ -46,7 +46,13 @@ Hard rules:
    - If "eda" (statistical profiling) will run: return RAW rows with the original numeric/text columns, NOT pre-aggregated summary rows. The EDA agent computes its own statistics. Do NOT use GROUP BY, COUNT, AVG, etc. — just SELECT the relevant columns.
    - If "viz" (charting) will run: return rows suitable for plotting — include the dimensional columns (categories, dates) and the measure columns as separate fields. Do NOT pre-format or concatenate values.
    - If "ml" (modeling) will run: return RAW numeric feature columns. Do NOT use CASE WHEN, bucketing, or text-label assignment to pre-cluster or pre-classify data — the ML agent does that itself. Just SELECT the raw columns the model needs.
-   - If ONLY "sql" runs (no downstream agents): you may use aggregates, GROUP BY, etc. as appropriate to answer the question directly.`;
+   - If ONLY "sql" runs (no downstream agents): you may use aggregates, GROUP BY, etc. as appropriate to answer the question directly.
+
+CLASSIC MODE NOTES (when the schema is from a CSV/XLSX upload):
+- The dataset is a SINGLE table. Joins are not possible — don't write them.
+- The "dialect" field will say "csv" or "xlsx". Treat it as standard SQL.
+- Allowed read SQL: SELECT with WHERE, ORDER BY, LIMIT, GROUP BY, COUNT, SUM, AVG, MIN, MAX. Subqueries, JOINs, CTEs, and window functions are NOT supported — keep it flat.
+- For Zen-mode writes in Classic mode: INSERT (single or multi-row), UPDATE … SET … WHERE …, DELETE FROM … WHERE … are all supported and mutate the in-memory dataset. The user can download the edited file afterwards.`;
 
 export async function runSqlAgent(state: AgentState, downstreamAgents: AgentName[] = []): Promise<SqlAgentOutput> {
   const snap = state.schemaSnapshot;

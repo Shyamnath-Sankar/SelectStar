@@ -55,8 +55,12 @@ export async function runRouter(state: AgentState): Promise<RouterOutput> {
     .map((m) => `${m.role}: ${m.content.slice(0, 300)}`)
     .join("\n");
 
-  const userPrompt = `Database dialect: ${state.dialect}
+  const modeHint = state.mode === "classic"
+    ? `\nMode: CLASSIC — the user uploaded a single CSV/XLSX file as a flat table named "${state.schemaSnapshot?.tables[0]?.name ?? "data"}". Joins are not possible; treat all questions as queries against this one table.`
+    : "";
 
+  const userPrompt = `Database dialect: ${state.dialect}
+${modeHint}
 Schema:
 ${schemaText}
 

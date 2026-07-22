@@ -32,6 +32,7 @@ import { runEdaAgent } from "./eda";
 import { runVizAgent } from "./viz";
 import { runMlAgent } from "./ml";
 import { runSynthesis } from "./synthesis";
+import { runVerificationAgent } from "./verify";
 import { getFrame } from "@/lib/frame-cache";
 
 export interface OrchestratorCallbacks {
@@ -89,7 +90,36 @@ export async function runTurn(
     // Pass the downstream agents so the SQL agent knows whether to return
     // raw rows (for EDA/viz/ML) or may use aggregates (sql-only turns).
     const downstream = route.agents.filter((a) => a !== "sql");
-    const out = await runSqlAgent(state, downstream);
+    let out = await runSqlAgent(state, downstream);
+
+    // ---- Verification + retry loop (max 1 retry) -----------------------
+    // If the SQL agent generated a query (not an error/pending), run the
+    // verification agent. If verification fails AND suggests a fix, retry
+    // the SQL agent with the fix as a corrective hint. This catches
+    // hallucinated columns, cartesian products, missing WHERE clauses, etc.
+    if (out.sql && !out.error && !out.pending) {
+      cb.emit({ type: "step", agent: "router", label: "Verifying the query…" });
+      const verification = await runVerificationAgent(state, out.sql, out.isWrite);
+      if (!verification.ok && verification.suggestedFix && verification.suggestedFix.trim()) {
+        cb.emit({ type: "step", agent: "router", label: `Fixing: ${verification.reason?.slice(0, 60) ?? "verification flagged an issue"}…` });
+        // Retry with the suggested fix injected into the conversation context.
+        const correctedState: AgentState = {
+          ...state,
+          messages: [
+            ...state.messages,
+            // Inject the verification feedback as a system-ish message.
+            { role: "system", content: `Verification feedback on your previous SQL attempt: ${verification.reason}. Suggested fix: ${verification.suggestedFix}. Please use this fix.` },
+          ],
+        };
+        const retryOut = await runSqlAgent(correctedState, downstream);
+        // Only use the retry if it didn't error out worse than the original.
+        if (!retryOut.error || retryOut.sql) {
+          out = retryOut;
+        }
+      }
+    }
+    // ---- End verification ----------------------------------------------
+
     if (out.error && !out.pending) {
       agentSummaries.push({ agent: "sql", summary: `SQL failed: ${out.error}` });
     } else if (out.pending) {

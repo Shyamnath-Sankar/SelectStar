@@ -4,11 +4,12 @@
  */
 import { db } from "@/lib/db";
 import { openConnection, closeConnection } from "@/lib/db-connection";
-import type { AgentState, AgentMessage, CanvasObject, SchemaSnapshot } from "@/lib/types";
+import type { AgentState, AgentMessage, AppMode, CanvasObject, SchemaSnapshot } from "@/lib/types";
 import { suggestStarterQuestions } from "@/lib/agents/schema-utils";
 
 export interface SessionState {
   sessionId: string;
+  mode: AppMode;
   dialect: AgentState["dialect"];
   zenMode: boolean;
   canWrite: boolean;
@@ -33,12 +34,13 @@ export async function loadSessionState(sessionId: string): Promise<SessionState 
     try { schemaSnapshot = JSON.parse(session.schemaSnapshot) as SchemaSnapshot; } catch { /* ignore */ }
   }
 
-  // Reopen the live DB connection if it isn't already cached.
+  const mode: AppMode = session.mode === "classic" ? "classic" : "sql";
+
+  // Reopen the live DB connection or re-hydrate the in-memory dataset.
   try {
     await openConnection(sessionId, session.connectionString);
   } catch {
-    // If the connection can't be reopened (e.g. unreachable host), we still
-    // let the user browse past results; agents that need a live query will fail.
+    /* fall through — agents that need the data will surface a clear error */
   }
 
   const messages: AgentMessage[] = session.messages.map((m) => ({
@@ -50,6 +52,7 @@ export async function loadSessionState(sessionId: string): Promise<SessionState 
 
   return {
     sessionId,
+    mode,
     dialect: session.dialect as AgentState["dialect"],
     zenMode: session.zenMode,
     canWrite: session.canWrite,
@@ -102,6 +105,7 @@ export async function closeSession(sessionId: string) {
 export function toAgentState(s: SessionState, userInput: string): AgentState {
   return {
     sessionId: s.sessionId,
+    mode: s.mode,
     dialect: s.dialect,
     schemaSnapshot: s.schemaSnapshot,
     zenMode: s.zenMode,

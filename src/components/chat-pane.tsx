@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, Loader2, User, Sparkles, RotateCcw, AlertCircle, Database, Copy, RefreshCw, Check, Square, ArrowDown } from "lucide-react";
+import { Send, Loader2, User, Sparkles, RotateCcw, AlertCircle, Database, Copy, RefreshCw, Check, Square, ArrowDown, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession, type ChatMessage } from "@/lib/store";
@@ -28,6 +28,7 @@ export function ChatPane() {
     setSending, addCanvasObject, reset, popLastAssistant,
   } = useSession();
   const sessionLabel = useSession((s) => s.label);
+  const mode = useSession((s) => s.mode);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -168,6 +169,7 @@ export function ChatPane() {
             schema={schema}
             suggestedQuestions={suggestedQuestions}
             onPick={(q) => void send(q)}
+            mode={mode}
           />
         )}
         {showScrollDown && (
@@ -192,7 +194,15 @@ export function ChatPane() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={zenMode ? "Ask anything — Zen mode is on, writes allowed (with confirmation)…" : "Ask a question about your data…"}
+            placeholder={
+              mode === "classic"
+                ? zenMode
+                  ? "Ask the SelectStar Classic assistant — Zen mode is on, edits allowed (with confirmation)…"
+                  : "Ask the SelectStar Classic assistant about your data…"
+                : zenMode
+                  ? "Ask anything — Zen mode is on, writes allowed (with confirmation)…"
+                  : "Ask a question about your data…"
+            }
             className="min-h-[44px] max-h-40 resize-none pr-12 text-sm leading-relaxed"
             disabled={sending}
           />
@@ -287,7 +297,7 @@ function MessageBubble({
           )}
         >
           {message.content ? (
-            <div className={cn("prose-chat", isUser && "[&p]:my-0")}>
+            <div className={cn("prose-chat", isUser && "[&>p]:my-0")}>
               <ReactMarkdown>{message.content}</ReactMarkdown>
               {message.streaming && <span className="streaming-caret" />}
             </div>
@@ -332,20 +342,28 @@ function EmptyState({
   schema,
   suggestedQuestions,
   onPick,
+  mode,
 }: {
   schema: { tables: { name: string; rowCount: number }[] } | null;
   suggestedQuestions: string[];
   onPick: (q: string) => void;
+  mode?: "sql" | "classic";
 }) {
   return (
     <div className="h-full flex flex-col items-center justify-center text-center py-8">
       <div className="h-12 w-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-3">
-        <Database className="h-6 w-6 text-primary" />
+        {mode === "classic" ? (
+          <FileSpreadsheet className="h-6 w-6 text-primary" />
+        ) : (
+          <Database className="h-6 w-6 text-primary" />
+        )}
       </div>
       <h3 className="font-medium text-sm">Ready when you are</h3>
       <p className="text-xs text-muted-foreground mt-1 max-w-xs">
         {schema
-          ? `Connected to ${schema.tables.length} tables. Try one of these to get going:`
+          ? mode === "classic"
+            ? `Loaded ${schema.tables[0]?.rowCount.toLocaleString() ?? 0} rows across ${schema.tables[0]?.name ?? "the dataset"}. Try one of these to get going:`
+            : `Connected to ${schema.tables.length} tables. Try one of these to get going:`
           : "Ask a question about your data."}
       </p>
       {suggestedQuestions.length > 0 && (
