@@ -1,0 +1,691 @@
+     1→"use client";
+     2→
+     3→import { useEffect, useState } from "react";
+     4→import {
+     5→  Database, Loader2, Sparkles, ShieldCheck, Lock, ArrowRight, Zap,
+     6→  Clock, Trash2, ChevronRight, Terminal, BarChart3,
+     7→  Check, Eye, FileSpreadsheet, Upload, Table2, Download, Brain, GitBranch,
+     8→} from "lucide-react";
+     9→import { Button } from "@/components/ui/button";
+    10→import { Input } from "@/components/ui/input";
+    11→import { Logo } from "@/components/logo";
+    12→import { useSession } from "@/lib/store";
+    13→import { toast } from "sonner";
+    14→import { motion, AnimatePresence } from "framer-motion";
+    15→import { cn } from "@/lib/utils";
+    16→import type { AppMode } from "@/lib/types";
+    17→
+    18→interface RecentSession {
+    19→  id: string;
+    20→  label: string;
+    21→  dialect: string;
+    22→  mode?: string;
+    23→  status: string;
+    24→  canWrite: boolean;
+    25→  zenMode: boolean;
+    26→  updatedAt: string;
+    27→}
+    28→
+    29→/**
+    30→ * ConnectionScreen — redesigned for a cleaner first-run experience.
+    31→ *
+    32→ * Single-column hero on top, prominent two-card mode picker below, then the
+    33→ * mode-specific form (DB connection string OR file upload). Recent sessions
+    34→ * collapse to a compact strip at the bottom. The goal: a user lands on the
+    35→ * page, picks a mode in one click, fills one field, hits Connect.
+    36→ */
+    37→export function ConnectionScreen() {
+    38→  const { connecting, connectError, connect, setConnecting, setConnectError, loadSession } = useSession();
+    39→  const [mode, setMode] = useState<AppMode>("sql");
+    40→  const [connStr, setConnStr] = useState("demo");
+    41→  const [recent, setRecent] = useState<RecentSession[]>([]);
+    42→  const [loadingSession, setLoadingSession] = useState<string | null>(null);
+    43→  const [showRecent, setShowRecent] = useState(false);
+    44→  const [uploadingFile, setUploadingFile] = useState<File | null>(null);
+    45→  const [uploading, setUploading] = useState(false);
+    46→  const [dragActive, setDragActive] = useState(false);
+    47→
+    48→  useEffect(() => {
+    49→    void (async () => {
+    50→      try {
+    51→        const res = await fetch("/api/sessions");
+    52→        const data = await res.json();
+    53→        setRecent((data.sessions || []).filter((s: RecentSession) => s.status === "connected"));
+    54→      } catch { /* ignore */ }
+    55→    })();
+    56→  }, []);
+    57→
+    58→  // ---- SQL mode: connect to a database via connection string -----------
+    59→  async function handleConnect(e?: React.FormEvent) {
+    60→    e?.preventDefault();
+    61→    if (!connStr.trim()) {
+    62→      toast.error("Please enter a connection string.");
+    63→      return;
+    64→    }
+    65→    setConnecting(true);
+    66→    setConnectError(null);
+    67→    try {
+    68→      const res = await fetch("/api/connect", {
+    69→        method: "POST",
+    70→        headers: { "Content-Type": "application/json" },
+    71→        body: JSON.stringify({ connectionString: connStr.trim() }),
+    72→      });
+    73→      const data = await res.json();
+    74→      if (!res.ok) {
+    75→        setConnectError(data.error || "Connection failed");
+    76→        toast.error(data.error || "Connection failed");
+    77→        return;
+    78→      }
+    79→      connect({
+    80→        sessionId: data.sessionId,
+    81→        mode: "sql",
+    82→        label: data.dialect === "sqlite" && /demo/i.test(connStr) ? "Demo E-commerce DB" : `${data.dialect} session`,
+    83→        dialect: data.dialect,
+    84→        schema: data.schema,
+    85→        canWrite: data.canWrite,
+    86→        suggestedQuestions: data.suggestedQuestions,
+    87→      });
+    88→      if (data.domain) useSession.getState().setDomain(data.domain);
+    89→      toast.success(`Connected — ${data.schema.tables.length} tables found.`);
+    90→    } catch (e) {
+    91→      setConnectError((e as Error).message);
+    92→      toast.error((e as Error).message);
+    93→    } finally {
+    94→      setConnecting(false);
+    95→    }
+    96→  }
+    97→
+    98→  // ---- Classic mode: upload CSV/XLSX file(s) ---------------------------
+    99→  async function handleUpload(file: File) {
+   100→    setUploadingFile(file);
+   101→    setUploading(true);
+   102→    setConnectError(null);
+   103→    try {
+   104→      const fd = new FormData();
+   105→      fd.append("file", file);
+   106→      const res = await fetch("/api/classic/upload", { method: "POST", body: fd });
+   107→      const data = await res.json();
+   108→      if (!res.ok) {
+   109→        setConnectError(data.error || "Upload failed");
+   110→        toast.error(data.error || "Upload failed");
+   111→        return;
+   112→      }
+   113→      connect({
+   114→        sessionId: data.sessionId,
+   115→        mode: "classic",
+   116→        label: data.label,
+   117→        dialect: data.dialect,
+   118→        schema: data.schema,
+   119→        canWrite: true,
+   120→        suggestedQuestions: data.suggestedQuestions,
+   121→      });
+   122→      if (data.domain) useSession.getState().setDomain(data.domain);
+   123→      const tableCount = data.schema.tables.length;
+   124→      const totalRows = data.schema.tables.reduce((s: number, t: { rowCount: number }) => s + t.rowCount, 0);
+   125→      toast.success(`Loaded ${tableCount} ${tableCount === 1 ? "table" : "tables"} · ${totalRows.toLocaleString()} rows from ${file.name}.`);
+   126→    } catch (e) {
+   127→      setConnectError((e as Error).message);
+   128→      toast.error((e as Error).message);
+   129→    } finally {
+   130→      setUploading(false);
+   131→    }
+   132→  }
+   133→
+   134→  // Multi-file upload — accept an array of files.
+   135→  async function handleUploadMultiple(files: FileList | File[]) {
+   136→    const arr = Array.from(files);
+   137→    if (!arr.length) return;
+   138→    setUploadingFile(arr[0]);
+   139→    setUploading(true);
+   140→    setConnectError(null);
+   141→    try {
+   142→      const fd = new FormData();
+   143→      for (const f of arr) fd.append("files", f);
+   144→      const res = await fetch("/api/classic/upload", { method: "POST", body: fd });
+   145→      const data = await res.json();
+   146→      if (!res.ok) {
+   147→        setConnectError(data.error || "Upload failed");
+   148→        toast.error(data.error || "Upload failed");
+   149→        return;
+   150→      }
+   151→      connect({
+   152→        sessionId: data.sessionId,
+   153→        mode: "classic",
+   154→        label: data.label,
+   155→        dialect: data.dialect,
+   156→        schema: data.schema,
+   157→        canWrite: true,
+   158→        suggestedQuestions: data.suggestedQuestions,
+   159→      });
+   160→      if (data.domain) useSession.getState().setDomain(data.domain);
+   161→      const tableCount = data.schema.tables.length;
+   162→      const totalRows = data.schema.tables.reduce((s: number, t: { rowCount: number }) => s + t.rowCount, 0);
+   163→      toast.success(`Loaded ${tableCount} ${tableCount === 1 ? "table" : "tables"} · ${totalRows.toLocaleString()} rows from ${arr.length} ${arr.length === 1 ? "file" : "files"}.`);
+   164→    } catch (e) {
+   165→      setConnectError((e as Error).message);
+   166→      toast.error((e as Error).message);
+   167→    } finally {
+   168→      setUploading(false);
+   169→    }
+   170→  }
+   171→
+   172→  function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+   173→    const files = e.target.files;
+   174→    if (files && files.length > 1) {
+   175→      void handleUploadMultiple(files);
+   176→    } else if (files && files.length === 1) {
+   177→      void handleUpload(files[0]);
+   178→    }
+   179→  }
+   180→
+   181→  function onDrop(e: React.DragEvent) {
+   182→    e.preventDefault();
+   183→    setDragActive(false);
+   184→    const files = e.dataTransfer.files;
+   185→    if (files && files.length) void handleUploadMultiple(files);
+   186→  }
+   187→
+   188→  async function reopenSession(s: RecentSession) {
+   189→    setLoadingSession(s.id);
+   190→    try {
+   191→      const res = await fetch(`/api/sessions/${s.id}`);
+   192→      if (!res.ok) throw new Error("Session not found");
+   193→      const data = await res.json();
+   194→      loadSession({
+   195→        sessionId: data.sessionId,
+   196→        mode: data.mode === "classic" ? "classic" : "sql",
+   197→        label: data.label,
+   198→        dialect: data.dialect,
+   199→        schema: data.schemaSnapshot,
+   200→        canWrite: data.canWrite,
+   201→        zenMode: data.zenMode,
+   202→        suggestedQuestions: data.suggestedQuestions || [],
+   203→        messages: (data.messages || []).map((m: { role: string; content: string; id?: string }, i: number) => ({
+   204→          id: m.id || `msg-${i}`,
+   205→          role: m.role as "user" | "assistant" | "system",
+   206→          content: m.content,
+   207→        })),
+   208→        canvas: data.canvas || [],
+   209→      });
+   210→      toast.success(`Reopened "${s.label}"`);
+   211→    } catch (e) {
+   212→      toast.error((e as Error).message);
+   213→    } finally {
+   214→      setLoadingSession(null);
+   215→    }
+   216→  }
+   217→
+   218→  async function deleteSession(id: string, e: React.MouseEvent) {
+   219→    e.stopPropagation();
+   220→    try {
+   221→      await fetch(`/api/sessions/${id}`, { method: "DELETE" });
+   222→      setRecent((prev) => prev.filter((s) => s.id !== id));
+   223→      toast.success("Session deleted");
+   224→    } catch {
+   225→      toast.error("Couldn't delete session");
+   226→    }
+   227→  }
+   228→
+   229→  return (
+   230→    <div className="min-h-screen flex flex-col bg-background">
+   231→      {/* Ambient gradient backdrop — changes with mode */}
+   232→      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+   233→        <div className={cn(
+   234→          "absolute -top-40 -right-32 h-[28rem] w-[28rem] rounded-full blur-3xl transition-colors duration-500",
+   235→          mode === "classic" ? "bg-primary/15" : "bg-primary/12"
+   236→        )} />
+   237→        <div className={cn(
+   238→          "absolute top-1/3 -left-40 h-[24rem] w-[24rem] rounded-full blur-3xl transition-colors duration-500",
+   239→          mode === "classic" ? "bg-primary/8" : "bg-primary/6"
+   240→        )} />
+   241→        <div className="absolute -bottom-40 right-1/4 h-[20rem] w-[20rem] rounded-full bg-emerald-500/5 blur-3xl" />
+   242→        <div
+   243→          className="absolute inset-0 opacity-[0.025] dark:opacity-[0.04]"
+   244→          style={{
+   245→            backgroundImage: "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)",
+   246→            backgroundSize: "48px 48px",
+   247→          }}
+   248→        />
+   249→      </div>
+   250→
+   251→      <main className="relative flex-1 flex flex-col items-center px-4 sm:px-6 py-8 sm:py-12">
+   252→        <div className="w-full max-w-2xl">
+   253→          {/* ===== Hero ===== */}
+   254→          <motion.div
+   255→            initial={{ opacity: 0, y: 12 }}
+   256→            animate={{ opacity: 1, y: 0 }}
+   257→            transition={{ duration: 0.5 }}
+   258→            className="text-center mb-8"
+   259→          >
+   260→            <div className="flex items-center justify-center gap-2.5 mb-4">
+   261→              <Logo className="h-10 w-10" />
+   262→              <span className="font-semibold text-2xl tracking-tight">SelectStar</span>
+   263→              <span className="ml-1 text-[10px] uppercase tracking-widest text-muted-foreground/70 font-medium bg-muted/60 rounded px-1.5 py-0.5">beta</span>
+   264→            </div>
+   265→            <AnimatePresence mode="wait">
+   266→              {mode === "sql" ? (
+   267→                <motion.div
+   268→                  key="sql-hero"
+   269→                  initial={{ opacity: 0, y: 6 }}
+   270→                  animate={{ opacity: 1, y: 0 }}
+   271→                  exit={{ opacity: 0, y: -6 }}
+   272→                  transition={{ duration: 0.25 }}
+   273→                >
+   274→                  <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight leading-[1.15]">
+   275→                    Talk to your database
+   276→                    <br />
+   277→                    <span className="text-primary font-medium">in plain English.</span>
+   278→                  </h1>
+   279→                  <p className="mt-3 text-sm sm:text-[15px] text-muted-foreground/80 leading-relaxed max-w-md mx-auto">
+   280→                    Paste a connection string and ask anything. AI agents write the SQL,
+   281→                    profile the data, and build the charts.
+   282→                  </p>
+   283→                </motion.div>
+   284→              ) : (
+   285→                <motion.div
+   286→                  key="classic-hero"
+   287→                  initial={{ opacity: 0, y: 6 }}
+   288→                  animate={{ opacity: 1, y: 0 }}
+   289→                  exit={{ opacity: 0, y: -6 }}
+   290→                  transition={{ duration: 0.25 }}
+   291→                >
+   292→                  <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight leading-[1.15]">
+   293→                    Drop a spreadsheet,
+   294→                    <br />
+   295→                    <span className="text-primary font-medium">ask anything.</span>
+   296→                  </h1>
+   297→                  <p className="mt-3 text-sm sm:text-[15px] text-muted-foreground/80 leading-relaxed max-w-md mx-auto">
+   298→                    Upload a CSV or XLSX and the same agent team analyses it — profiles,
+   299→                    charts, models, and (in Zen mode) edits the data directly.
+   300→                  </p>
+   301→                </motion.div>
+   302→              )}
+   303→            </AnimatePresence>
+   304→          </motion.div>
+   305→
+   306→          {/* ===== Mode picker — two prominent cards ===== */}
+   307→          <motion.div
+   308→            initial={{ opacity: 0, y: 10 }}
+   309→            animate={{ opacity: 1, y: 0 }}
+   310→            transition={{ duration: 0.5, delay: 0.1 }}
+   311→            className="grid grid-cols-2 gap-3 mb-6"
+   312→          >
+   313→            <ModeCard
+   314→              active={mode === "sql"}
+   315→              onClick={() => { setMode("sql"); setConnectError(null); }}
+   316→              icon={<Database className="h-5 w-5" />}
+   317→              title="SelectStar"
+   318→              subtitle="SQL · Postgres · SQLite"
+   319→              accent="primary"
+   320→            />
+   321→            <ModeCard
+   322→              active={mode === "classic"}
+   323→              onClick={() => { setMode("classic"); setConnectError(null); }}
+   324→              icon={<FileSpreadsheet className="h-5 w-5" />}
+   325→              title="SelectStar Classic"
+   326→              subtitle="CSV · XLSX files"
+   327→              accent="amber"
+   328→            />
+   329→          </motion.div>
+   330→
+   331→          {/* ===== Form card ===== */}
+   332→          <motion.div
+   333→            initial={{ opacity: 0, y: 10 }}
+   334→            animate={{ opacity: 1, y: 0 }}
+   335→            transition={{ duration: 0.5, delay: 0.2 }}
+   336→            className="rounded-2xl border border-border bg-card/80 backdrop-blur p-5 shadow-xl shadow-black/5"
+   337→          >
+   338→            <AnimatePresence mode="wait">
+   339→              {mode === "sql" ? (
+   340→                <motion.div
+   341→                  key="sql-form"
+   342→                  initial={{ opacity: 0 }}
+   343→                  animate={{ opacity: 1 }}
+   344→                  exit={{ opacity: 0 }}
+   345→                  transition={{ duration: 0.2 }}
+   346→                >
+   347→                  <form onSubmit={handleConnect}>
+   348→                    <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block uppercase tracking-wide">
+   349→                      Connection string
+   350→                    </label>
+   351→                    <div className="relative">
+   352→                      <Input
+   353→                        value={connStr}
+   354→                        onChange={(e) => setConnStr(e.target.value)}
+   355→                        placeholder="postgresql://user:pass@host:5432/db"
+   356→                        className={cn(
+   357→                          "font-mono text-sm h-12 pr-10 border-2 transition-colors",
+   358→                          "focus-visible:border-primary/50",
+   359→                          connectError && "border-destructive/40"
+   360→                        )}
+   361→                        disabled={connecting}
+   362→                        autoFocus
+   363→                      />
+   364→                      {connStr && (
+   365→                        <button
+   366→                          type="button"
+   367→                          onClick={() => setConnStr("")}
+   368→                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors"
+   369→                          tabIndex={-1}
+   370→                        >
+   371→                          <span className="text-lg leading-none">×</span>
+   372→                        </button>
+   373→                      )}
+   374→                    </div>
+   375→
+   376→                    <div className="mt-3 grid grid-cols-3 gap-2">
+   377→                      <QuickOption label="Demo DB" hint="E-commerce · SQLite" onClick={() => setConnStr("demo")} active={connStr === "demo"} />
+   378→                      <QuickOption label="PostgreSQL" hint="postgres://…" onClick={() => setConnStr("postgresql://user:pass@host:5432/db")} active={connStr.startsWith("postgres")} />
+   379→                      <QuickOption label="SQLite file" hint="/path/to.db" onClick={() => setConnStr("sqlite:./my.db")} active={connStr.startsWith("sqlite:")} />
+   380→                    </div>
+   381→
+   382→                    <Button type="submit" disabled={connecting} className="w-full h-11 mt-3 gap-2 font-medium">
+   383→                      {connecting ? (
+   384→                        <><Loader2 className="h-4 w-4 animate-spin" /> Connecting…</>
+   385→                      ) : (
+   386→                        <>Connect <ArrowRight className="h-4 w-4" /></>
+   387→                      )}
+   388→                    </Button>
+   389→
+   390→                    <AnimatePresence>
+   391→                      {connectError && (
+   392→                        <motion.div
+   393→                          initial={{ opacity: 0, height: 0 }}
+   394→                          animate={{ opacity: 1, height: "auto" }}
+   395→                          exit={{ opacity: 0, height: 0 }}
+   396→                          className="overflow-hidden"
+   397→                        >
+   398→                          <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-destructive flex items-start gap-2">
+   399→                            <span className="shrink-0 mt-0.5">⚠</span>
+   400→                            <span className="leading-relaxed">{connectError}</span>
+   401→                          </div>
+   402→                        </motion.div>
+   403→                      )}
+   404→                    </AnimatePresence>
+   405→
+   406→                    <div className="mt-3 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground/60">
+   407→                      <Lock className="h-3 w-3" />
+   408→                      Read-only by default · writes need Zen mode
+   409→                    </div>
+   410→                  </form>
+   411→                </motion.div>
+   412→              ) : (
+   413→                <motion.div
+   414→                  key="classic-form"
+   415→                  initial={{ opacity: 0 }}
+   416→                  animate={{ opacity: 1 }}
+   417→                  exit={{ opacity: 0 }}
+   418→                  transition={{ duration: 0.2 }}
+   419→                >
+   420→                  <div
+   421→                    onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+   422→                    onDragLeave={() => setDragActive(false)}
+   423→                    onDrop={onDrop}
+   424→                    className={cn(
+   425→                      "rounded-xl border-2 border-dashed p-8 text-center transition-colors",
+   426→                      dragActive ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
+   427→                    )}
+   428→                  >
+   429→                    <input
+   430→                      id="classic-file-input"
+   431→                      type="file"
+   432→                      accept=".csv,.tsv,.txt,.xlsx,.xlsm,.xlsb,.ods"
+   433→                      multiple
+   434→                      className="hidden"
+   435→                      onChange={onFileInput}
+   436→                    />
+   437→                    <motion.div
+   438→                      animate={{ scale: dragActive ? 1.05 : 1 }}
+   439→                      className="h-14 w-14 mx-auto rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-3"
+   440→                    >
+   441→                      {uploading ? (
+   442→                        <Loader2 className="h-6 w-6 text-primary animate-spin" />
+   443→                      ) : (
+   444→                        <Upload className="h-6 w-6 text-primary" />
+   445→                      )}
+   446→                    </motion.div>
+   447→                    <div className="text-sm font-medium">
+   448→                      {uploading
+   449→                        ? `Loading ${uploadingFile?.name ?? ""}…`
+   450→                        : "Drag file(s) here, or"}
+   451→                    </div>
+   452→                    {!uploading && (
+   453→                      <label
+   454→                        htmlFor="classic-file-input"
+   455→                        className="inline-flex items-center gap-1.5 mt-2 rounded-lg border border-primary/40 bg-primary/8 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/12 cursor-pointer transition-colors"
+   456→                      >
+   457→                        <FileSpreadsheet className="h-3.5 w-3.5" />
+   458→                        Choose files
+   459→                      </label>
+   460→                    )}
+   461→                    <div className="mt-3 text-[10px] text-muted-foreground/60">
+   462→                      .csv · .tsv · .xlsx · .xlsm · .xlsb · .ods · up to 25 MB each · multiple files supported
+   463→                    </div>
+   464→                  </div>
+   465→
+   466→                  <AnimatePresence>
+   467→                    {connectError && (
+   468→                      <motion.div
+   469→                        initial={{ opacity: 0, height: 0 }}
+   470→                        animate={{ opacity: 1, height: "auto" }}
+   471→                        exit={{ opacity: 0, height: 0 }}
+   472→                        className="overflow-hidden"
+   473→                      >
+   474→                        <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-destructive flex items-start gap-2">
+   475→                          <span className="shrink-0 mt-0.5">⚠</span>
+   476→                          <span className="leading-relaxed">{connectError}</span>
+   477→                        </div>
+   478→                      </motion.div>
+   479→                    )}
+   480→                  </AnimatePresence>
+   481→
+   482→                  <div className="mt-3 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground/60">
+   483→                    <Lock className="h-3 w-3" />
+   484→                    File parsed server-side · edits stay in memory
+   485→                  </div>
+   486→                </motion.div>
+   487→              )}
+   488→            </AnimatePresence>
+   489→          </motion.div>
+   490→
+   491→          {/* ===== Feature highlights — compact, mode-aware ===== */}
+   492→          <motion.div
+   493→            initial={{ opacity: 0, y: 10 }}
+   494→            animate={{ opacity: 1, y: 0 }}
+   495→            transition={{ duration: 0.5, delay: 0.3 }}
+   496→            className="mt-6 grid grid-cols-3 gap-3"
+   497→          >
+   498→            {mode === "sql" ? (
+   499→              <>
+   500→                <FeaturePill icon={<ShieldCheck className="h-3.5 w-3.5" />} label="Read-only by default" />
+   501→                <FeaturePill icon={<Eye className="h-3.5 w-3.5" />} label="Always inspectable" />
+   502→                <FeaturePill icon={<BarChart3 className="h-3.5 w-3.5" />} label="Vega-Lite charts" />
+   503→              </>
+   504→            ) : (
+   505→              <>
+   506→                <FeaturePill icon={<FileSpreadsheet className="h-3.5 w-3.5" />} label="CSV & XLSX parsed" />
+   507→                <FeaturePill icon={<Table2 className="h-3.5 w-3.5" />} label="Excel-like editing" />
+   508→                <FeaturePill icon={<Download className="h-3.5 w-3.5" />} label="Download edited file" />
+   509→              </>
+   510→            )}
+   511→          </motion.div>
+   512→
+   513→          {/* ===== Recent sessions — collapsible strip ===== */}
+   514→          {recent.length > 0 && (
+   515→            <motion.div
+   516→              initial={{ opacity: 0 }}
+   517→              animate={{ opacity: 1 }}
+   518→              transition={{ duration: 0.5, delay: 0.4 }}
+   519→              className="mt-6"
+   520→            >
+   521→              <button
+   522→                onClick={() => setShowRecent((v) => !v)}
+   523→                className="w-full flex items-center gap-1.5 px-1 py-1.5 text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide hover:text-foreground transition-colors"
+   524→              >
+   525→                <Clock className="h-3 w-3" />
+   526→                Recent sessions
+   527→                <span className="text-muted-foreground/50 normal-case tracking-normal">({recent.length})</span>
+   528→                <ChevronRight className={cn("h-3 w-3 ml-auto transition-transform", showRecent && "rotate-90")} />
+   529→              </button>
+   530→              <AnimatePresence>
+   531→                {showRecent && (
+   532→                  <motion.div
+   533→                    initial={{ opacity: 0, height: 0 }}
+   534→                    animate={{ opacity: 1, height: "auto" }}
+   535→                    exit={{ opacity: 0, height: 0 }}
+   536→                    className="overflow-hidden"
+   537→                  >
+   538→                    <div className="space-y-1.5 pt-1">
+   539→                      {recent.map((s) => (
+   540→                        <motion.button
+   541→                          key={s.id}
+   542→                          onClick={() => reopenSession(s)}
+   543→                          disabled={loadingSession === s.id}
+   544→                          whileHover={{ x: 2 }}
+   545→                          className="group w-full flex items-center gap-2.5 rounded-xl border border-border bg-card/60 backdrop-blur px-3 py-2.5 text-left hover:border-primary/30 hover:bg-accent/30 transition-all disabled:opacity-60"
+   546→                        >
+   547→                          <div className={cn(
+   548→                            "h-7 w-7 rounded-lg border flex items-center justify-center shrink-0",
+   549→                            s.mode === "classic" ? "bg-primary/8 border-primary/15" : "bg-primary/8 border-primary/15"
+   550→                          )}>
+   551→                            {s.mode === "classic"
+   552→                              ? <FileSpreadsheet className="h-3.5 w-3.5 text-primary" />
+   553→                              : <Database className="h-3.5 w-3.5 text-primary" />}
+   554→                          </div>
+   555→                          <div className="min-w-0 flex-1">
+   556→                            <div className="text-sm font-medium truncate">{s.label}</div>
+   557→                            <div className="flex items-center gap-1.5 mt-0.5">
+   558→                              <span className="text-[9px] uppercase tracking-wide text-muted-foreground bg-muted/60 rounded px-1 py-0.5">{s.dialect}</span>
+   559→                              {s.mode === "classic" && (
+   560→                                <span className="text-[9px] uppercase tracking-wide text-primary bg-primary/10 rounded px-1 py-0.5">Classic</span>
+   561→                              )}
+   562→                              {s.zenMode && (
+   563→                                <span className="text-[9px] uppercase tracking-wide text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded px-1 py-0.5">Zen</span>
+   564→                              )}
+   565→                              <span className="text-[10px] text-muted-foreground/60 tabular-nums">{timeAgo(s.updatedAt)}</span>
+   566→                            </div>
+   567→                          </div>
+   568→                          <span
+   569→                            onClick={(e) => deleteSession(s.id, e)}
+   570→                            role="button"
+   571→                            tabIndex={0}
+   572→                            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all p-1 rounded cursor-pointer"
+   573→                            title="Delete session"
+   574→                          >
+   575→                            <Trash2 className="h-3.5 w-3.5" />
+   576→                          </span>
+   577→                          {loadingSession === s.id ? (
+   578→                            <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+   579→                          ) : (
+   580→                            <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+   581→                          )}
+   582→                        </motion.button>
+   583→                      ))}
+   584→                    </div>
+   585→                  </motion.div>
+   586→                )}
+   587→              </AnimatePresence>
+   588→            </motion.div>
+   589→          )}
+   590→        </div>
+   591→      </main>
+   592→
+   593→      <footer className="relative border-t border-border/40 py-3.5 px-6 flex items-center justify-between text-[11px] text-muted-foreground/60">
+   594→        <span>Built with Next.js · Vega-Lite · an OpenAI-compatible LLM</span>
+   595→        <span className="hidden sm:flex items-center gap-1.5">
+   596→          <Sparkles className="h-3 w-3" />
+   597→          Agentic data analysis
+   598→        </span>
+   599→      </footer>
+   600→    </div>
+   601→  );
+   602→}
+   603→
+   604→function timeAgo(iso: string): string {
+   605→  const diff = Date.now() - new Date(iso).getTime();
+   606→  const mins = Math.floor(diff / 60000);
+   607→  if (mins < 1) return "now";
+   608→  if (mins < 60) return `${mins}m ago`;
+   609→  const hrs = Math.floor(mins / 60);
+   610→  if (hrs < 24) return `${hrs}h ago`;
+   611→  const days = Math.floor(hrs / 24);
+   612→  return `${days}d ago`;
+   613→}
+   614→
+   615→function QuickOption({ label, hint, onClick, active }: { label: string; hint: string; onClick: () => void; active?: boolean }) {
+   616→  return (
+   617→    <button
+   618→      type="button"
+   619→      onClick={onClick}
+   620→      className={cn(
+   621→        "rounded-lg border px-2.5 py-2 text-left transition-all hover:scale-[1.02]",
+   622→        active ? "border-primary/50 bg-primary/8 shadow-sm shadow-primary/10" : "border-border hover:border-border hover:bg-accent/40"
+   623→      )}
+   624→    >
+   625→      <div className="text-xs font-medium flex items-center gap-1">
+   626→        {active && <Check className="h-3 w-3 text-primary" />}
+   627→        {label}
+   628→      </div>
+   629→      <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{hint}</div>
+   630→    </button>
+   631→  );
+   632→}
+   633→
+   634→function ModeCard({
+   635→  active, onClick, icon, title, subtitle, accent,
+   636→}: {
+   637→  active: boolean;
+   638→  onClick: () => void;
+   639→  icon: React.ReactNode;
+   640→  title: string;
+   641→  subtitle: string;
+   642→  accent: "primary" | "amber";
+   643→}) {
+   644→  return (
+   645→    <button
+   646→      type="button"
+   647→      onClick={onClick}
+   648→      className={cn(
+   649→        "group relative rounded-2xl border-2 p-4 text-left transition-all overflow-hidden",
+   650→        active
+   651→          ? "border-primary bg-primary/8 shadow-lg shadow-primary/10"
+   652→          : "border-border bg-card/60 hover:border-primary/40 hover:bg-accent/30"
+   653→      )}
+   654→    >
+   655→      {active && (
+   656→        <motion.div
+   657→          layoutId="mode-card-glow"
+   658→          className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent pointer-events-none"
+   659→          transition={{ duration: 0.3 }}
+   660→        />
+   661→      )}
+   662→      <div className="relative flex items-start gap-3">
+   663→        <div className={cn(
+   664→          "h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-colors",
+   665→          active
+   666→            ? "bg-primary text-primary-foreground"
+   667→            : "bg-muted text-muted-foreground group-hover:text-primary group-hover:bg-primary/10"
+   668→        )}>
+   669→          {icon}
+   670→        </div>
+   671→        <div className="min-w-0 flex-1">
+   672→          <div className={cn("text-sm font-semibold flex items-center gap-1.5", active ? "text-primary" : "text-foreground")}>
+   673→            {title}
+   674→            {active && <Check className="h-3.5 w-3.5" />}
+   675→          </div>
+   676→          <div className="text-[11px] text-muted-foreground/80 mt-0.5">{subtitle}</div>
+   677→        </div>
+   678→      </div>
+   679→    </button>
+   680→  );
+   681→}
+   682→
+   683→function FeaturePill({ icon, label }: { icon: React.ReactNode; label: string }) {
+   684→  return (
+   685→    <div className="flex items-center gap-1.5 rounded-lg border border-border bg-card/40 px-2.5 py-2 text-[11px] text-muted-foreground">
+   686→      <span className="text-primary shrink-0">{icon}</span>
+   687→      <span className="truncate">{label}</span>
+   688→    </div>
+   689→  );
+   690→}
+   691→
