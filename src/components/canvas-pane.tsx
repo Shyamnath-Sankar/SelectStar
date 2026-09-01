@@ -13,14 +13,22 @@ export function CanvasPane() {
   const canvas = useSession((s) => s.canvas);
   const mode = useSession((s) => s.mode);
   const sessionId = useSession((s) => s.sessionId);
+  const showSql = useSession((s) => s.showSql);
   const clearCanvas = () => {
     useSession.setState({ canvas: [] });
     toast.success("Canvas cleared");
   };
 
-  // Visible canvas items (HITL artifacts render in chat, not here).
+  // Visible canvas items.
+  // - HITL artifacts (pending_write, report_plan) render inline in chat, not here.
+  // - SQL blocks render only when the user has "Show SQL" turned on in the chat header.
+  //   When off (default), the canvas stays focused on results — tables, charts, EDA,
+  //   model results, reports, and data-quality scans.
   const visibleCanvas = canvas.filter(
-    (o) => o.type !== "pending_write" && o.type !== "report_plan"
+    (o) =>
+      o.type !== "pending_write" &&
+      o.type !== "report_plan" &&
+      (showSql || o.type !== "sql")
   );
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -142,7 +150,7 @@ function EmptyCanvas({ mode }: { mode?: "sql" | "classic" }) {
       <p className="text-xs text-muted-foreground/70 mt-1 max-w-xs">
         {mode === "classic"
           ? "Tables, charts, and EDA summaries from your conversation will appear here. Switch to the Spreadsheet tab to edit the data directly."
-          : "Tables, charts, SQL, statistical summaries and model results from your conversation will appear here — like a living notebook."}
+          : "Tables, charts, statistical summaries and model results from your conversation will appear here — like a living notebook. SQL blocks are hidden by default; flip the SQL toggle in the chat header to see them."}
       </p>
     </div>
   );

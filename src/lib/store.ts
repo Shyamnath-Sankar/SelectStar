@@ -61,6 +61,11 @@ interface SessionStore {
   // Domain template detected after connect (Sales/Marketing/HR/etc.) — null until detected.
   domain: string | null;
 
+  // UI: whether to show SQL query blocks on the canvas pane. Default OFF —
+  // the canvas stays focused on results (tables, charts, EDA, reports) and
+  // the user can flip this on when they want to see the generated SQL.
+  showSql: boolean;
+
   // Actions
   setConnecting: (v: boolean) => void;
   setConnectError: (e: string | null) => void;
@@ -87,6 +92,7 @@ interface SessionStore {
     canvas: CanvasObject[];
   }) => void;
   setZenMode: (v: boolean) => void;
+  setShowSql: (v: boolean) => void;
   addMessage: (m: ChatMessage) => void;
   appendToMessage: (id: string, delta: string) => void;
   setMessageSteps: (id: string, steps: { agent: AgentName; label: string }[]) => void;
@@ -126,6 +132,7 @@ export const useSession = create<SessionStore>((set) => ({
   pendingWrites: [],
   auditCount: 0,
   domain: null,
+  showSql: false,
 
   setConnecting: (v) => set({ connecting: v }),
   setConnectError: (e) => set({ connectError: e }),
@@ -161,6 +168,10 @@ export const useSession = create<SessionStore>((set) => ({
       canvas: [],
       pendingWrites: [],
       domain: null,
+      // Resetting the session keeps the Show-SQL preference (it's a UI
+      // preference, not session state) — but resetting here is also fine
+      // because the next session will inherit the same default OFF.
+      showSql: false,
     }),
   loadSession: (data) =>
     set({
@@ -180,6 +191,7 @@ export const useSession = create<SessionStore>((set) => ({
       domain: null,
     }),
   setZenMode: (v) => set({ zenMode: v }),
+  setShowSql: (v) => set({ showSql: v }),
   addMessage: (m) =>
     set((s) => ({ messages: [...s.messages, m], streamingId: m.streaming ? m.id : s.streamingId })),
   appendToMessage: (id, delta) =>

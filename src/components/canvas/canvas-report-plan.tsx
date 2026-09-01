@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Sparkles, Loader2, ChevronRight, Check } from "lucide-react";
+import { FileText, Sparkles, Loader2, ChevronRight, Check, FlaskConical } from "lucide-react";
 import type { ReportPlanCanvasObject } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/lib/store";
 import { streamChat } from "@/lib/chat-client";
@@ -25,6 +26,11 @@ export function CanvasReportPlan({ obj }: { obj: ReportPlanCanvasObject }) {
   const [focus, setFocus] = useState(obj.defaultFocus);
   const [depth, setDepth] = useState(obj.defaultDepth);
   const [sections, setSections] = useState<Set<string>>(new Set(obj.defaultSections));
+  // Default to plain English (includeTechnicals === false) unless the plan
+  // explicitly opted in. The user can flip this on to get the technical terms.
+  const [includeTechnicals, setIncludeTechnicals] = useState<boolean>(
+    obj.defaultIncludeTechnicals === true
+  );
   const [submitting, setSubmitting] = useState(false);
 
   const sessionId = useSession((s) => s.sessionId);
@@ -61,7 +67,7 @@ export function CanvasReportPlan({ obj }: { obj: ReportPlanCanvasObject }) {
     addMessage({
       id: crypto.randomUUID(),
       role: "user",
-      content: `Generate the report — focus: ${focusLabel}, depth: ${depthLabel}, sections: ${[...sections].join(", ")}`,
+      content: `Generate the report — focus: ${focusLabel}, depth: ${depthLabel}, sections: ${[...sections].join(", ")}${includeTechnicals ? ", technicals: on" : ", technicals: off"}`,
     });
 
     // Add a streaming placeholder for the assistant reply.
@@ -72,6 +78,7 @@ export function CanvasReportPlan({ obj }: { obj: ReportPlanCanvasObject }) {
       focus,
       depth,
       sections: [...sections],
+      includeTechnicals,
     };
     const message = `${GENERATE_REPORT_PREFIX} ${JSON.stringify(payload)}`;
 
@@ -195,6 +202,33 @@ export function CanvasReportPlan({ obj }: { obj: ReportPlanCanvasObject }) {
               );
             })}
           </div>
+        </div>
+
+        {/* Include technical terms toggle.
+            Default OFF — the report is plain English with no statistical
+            jargon (no "correlation", "skew", "outlier", "R²", etc.). The
+            user can flip this ON to get the proper technical terms. */}
+        <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+          <FlaskConical className={cn("h-4 w-4 mt-0.5 shrink-0", includeTechnicals ? "text-primary" : "text-muted-foreground")} />
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-medium flex items-center gap-1.5">
+              Include technical terms
+              <span className="text-[9px] uppercase tracking-wide text-muted-foreground/70">
+                {includeTechnicals ? "on" : "off · plain English"}
+              </span>
+            </div>
+            <div className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
+              {includeTechnicals
+                ? "The report will use proper statistical terms (correlation, Pearson r, skew, outlier, k-means, R², etc.) with brief explanations."
+                : "The report will be written in everyday language — no statistical jargon. Relationships become \"move together\", outliers become \"unusual values\", clusters become \"natural groups\"."}
+            </div>
+          </div>
+          <Switch
+            checked={includeTechnicals}
+            onCheckedChange={setIncludeTechnicals}
+            className="scale-90 mt-0.5"
+            aria-label="Include technical terms in the report"
+          />
         </div>
 
         {/* Generate button */}

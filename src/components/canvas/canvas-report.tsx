@@ -104,8 +104,16 @@ export function CanvasReport({ obj }: { obj: ReportCanvasObject }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="font-medium text-sm truncate">{obj.title}</div>
-          <div className="text-[10px] text-muted-foreground">
-            Generated {generatedDate.toLocaleString()} · {obj.depth} depth · focus: {obj.focus}
+          <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 flex-wrap">
+            <span>Generated {generatedDate.toLocaleString()} · {obj.depth} depth · focus: {obj.focus}</span>
+            <span className={cn(
+              "inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] uppercase tracking-wide",
+              obj.includeTechnicals
+                ? "bg-primary/10 text-primary"
+                : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+            )}>
+              {obj.includeTechnicals ? "technical" : "plain English"}
+            </span>
           </div>
         </div>
         <button
@@ -418,7 +426,7 @@ function reportToMarkdown(r: ReportCanvasObject): string {
   const lines: string[] = [];
   lines.push(`# ${r.title}`);
   lines.push("");
-  lines.push(`*Generated: ${new Date(r.generatedAt).toLocaleString()} · depth: ${r.depth} · focus: ${r.focus}*`);
+  lines.push(`*Generated: ${new Date(r.generatedAt).toLocaleString()} · depth: ${r.depth} · focus: ${r.focus} · ${r.includeTechnicals ? "technical terms on" : "plain English"}*`);
   lines.push("");
   // Dataset summary
   lines.push("## Dataset Summary");

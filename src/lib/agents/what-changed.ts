@@ -191,6 +191,7 @@ export async function runWhatChangedReport(state: AgentState): Promise<WhatChang
     generatedAt: new Date().toISOString(),
     focus: "what_changed",
     depth: "standard",
+    includeTechnicals: true,
     datasetSummary: {
       rows: frame.rowCount,
       columns: frame.columns.length,

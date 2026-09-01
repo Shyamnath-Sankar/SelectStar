@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Send, Loader2, User, Sparkles, RotateCcw, AlertCircle, Database, Copy, RefreshCw, Check, Square, ArrowDown, FileSpreadsheet, FileText, Lightbulb, GitCompare } from "lucide-react";
+import { Send, Loader2, User, Sparkles, RotateCcw, AlertCircle, Database, Copy, RefreshCw, Check, Square, ArrowDown, FileSpreadsheet, FileText, TerminalSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useSession, type ChatMessage } from "@/lib/store";
@@ -50,6 +50,7 @@ export function ChatPane() {
     sessionId, messages, sending, zenMode, schema, suggestedQuestions,
     addMessage, appendToMessage, addStepToMessage, finalizeMessage,
     setSending, addCanvasObject, addInlineArtifact, reset, popLastAssistant, setFollowUps,
+    showSql, setShowSql,
   } = useSession();
   const sessionLabel = useSession((s) => s.label);
   const mode = useSession((s) => s.mode);
@@ -173,30 +174,24 @@ export function ChatPane() {
         <span className="text-xs text-muted-foreground">·</span>
         <span className="text-xs text-muted-foreground truncate">{sessionLabel}</span>
 
-        {/* One-click shortcuts — surface the report agent's most useful modes
-            so non-expert users don't have to remember the keywords. */}
+        {/* Header actions.
+            - Show SQL toggle: when ON, SQL query blocks render on the canvas
+              alongside the tables/charts they produced. When OFF (default),
+              the canvas stays focused on results — non-technical users don't
+              get distracted by SQL noise.
+            - New: reset the session and go back to the connection screen. */}
         <div className="ml-auto flex items-center gap-1">
           <Button
-            variant="ghost"
+            variant={showSql ? "default" : "ghost"}
             size="sm"
             className="h-7 gap-1 text-xs"
-            onClick={() => void send("What should I know? Surface the hidden patterns and tell me what matters most in this data.")}
+            onClick={() => setShowSql(!showSql)}
             disabled={sending}
-            title="One-click: surface hidden patterns and tell you what matters most."
+            title={showSql ? "Showing generated SQL on the canvas. Click to hide." : "Showing results only. Click to also show the generated SQL on the canvas."}
+            aria-pressed={showSql}
           >
-            <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
-            <span className="hidden sm:inline">What should I know?</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1 text-xs"
-            onClick={() => void send("What changed? Compare the most recent period to the prior period across every key metric and tell me the biggest movers.")}
-            disabled={sending}
-            title="One-click: period-over-period diff, biggest movers."
-          >
-            <GitCompare className="h-3.5 w-3.5 text-primary" />
-            <span className="hidden sm:inline">What changed?</span>
+            <TerminalSquare className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">SQL</span>
           </Button>
           <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => { reset(); }}>
             <RotateCcw className="h-3.5 w-3.5" /> New

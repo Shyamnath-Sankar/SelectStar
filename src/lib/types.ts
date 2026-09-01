@@ -196,6 +196,9 @@ export interface ReportCanvasObject {
   /** What the user picked in the planner phase, recorded for transparency. */
   focus: string;
   depth: "quick" | "standard" | "deep";
+  /** Whether the user opted into technical terms. When false, the report
+   *  was generated in plain-English-only mode. */
+  includeTechnicals: boolean;
   datasetSummary: {
     rows: number;
     columns: number;
@@ -239,6 +242,9 @@ export interface ReportPlanCanvasObject {
   defaultFocus: string;
   defaultDepth: string;
   defaultSections: string[];
+  /** Pre-selected state for the "Include technical terms" toggle.
+   *  Default false — reports are plain English unless the user opts in. */
+  defaultIncludeTechnicals: boolean;
 }
 
 // ---------------------------------------------------------------------------

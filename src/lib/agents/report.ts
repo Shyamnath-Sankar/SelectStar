@@ -64,6 +64,14 @@ export interface ReportGeneratorRequest {
   focus: string;
   depth: "quick" | "standard" | "deep";
   sections: string[];
+  /**
+   * When false (default), the report must be written in plain English with NO
+   * technical terms — no "correlation", "Pearson r", "skew", "IQR", "k-means",
+   * "outlier", "regression", "p-value", "R²", etc. Patterns are described
+   * using everyday language ("moves together", "extreme values", "lopsided",
+   * "natural groupings"). When true, the report may use the proper terms.
+   */
+  includeTechnicals: boolean;
 }
 
 // Re-export the prefix + detector so callers can import from either place.
@@ -72,9 +80,16 @@ export { GENERATE_REPORT_PREFIX, isGenerateReportMessage };
 export function parseGenerateReportMessage(text: string): ReportGeneratorRequest | null {
   try {
     const json = text.trim().slice(GENERATE_REPORT_PREFIX.length).trim();
-    const parsed = JSON.parse(json) as ReportGeneratorRequest;
+    const parsed = JSON.parse(json) as Partial<ReportGeneratorRequest>;
     if (!parsed.focus || !parsed.depth || !Array.isArray(parsed.sections)) return null;
-    return parsed;
+    // Default `includeTechnicals` to false — the report is plain English
+    // unless the user explicitly opted in to technical terms.
+    return {
+      focus: parsed.focus,
+      depth: parsed.depth,
+      sections: parsed.sections,
+      includeTechnicals: parsed.includeTechnicals === true,
+    };
   } catch {
     return null;
   }
@@ -184,6 +199,9 @@ Propose a report plan. Return ONLY JSON.`;
     defaultFocus,
     defaultDepth,
     defaultSections,
+    // Default OFF — the user must explicitly opt in to technical terms. The
+    // generated report is plain English by default.
+    defaultIncludeTechnicals: false,
   };
 
   return {
@@ -233,7 +251,7 @@ export async function runReportGenerator(
 
   // ---- 2. Profile + mine hidden patterns ------------------------------
   const profile = profileFrame(frame);
-  const patterns = mineHiddenPatterns(frame, profile, request.depth);
+  const patterns = mineHiddenPatterns(frame, profile, request.depth, request.includeTechnicals);
 
   // ---- 3. Optional: enrich with a quick model (deep mode only) -------
   let modelNarrative = "";
@@ -259,6 +277,7 @@ export async function runReportGenerator(
     generatedAt: new Date().toISOString(),
     focus: request.focus,
     depth: request.depth,
+    includeTechnicals: request.includeTechnicals,
     datasetSummary: {
       rows: frame.rowCount,
       columns: frame.columns.length,
@@ -584,7 +603,8 @@ function pearson(a: number[], b: number[]): number {
 function mineHiddenPatterns(
   frame: DataFrame,
   profile: FrameProfile,
-  depth: "quick" | "standard" | "deep"
+  depth: "quick" | "standard" | "deep",
+  includeTechnicals: boolean,
 ): HiddenPattern[] {
   const patterns: HiddenPattern[] = [];
 
@@ -599,8 +619,12 @@ function mineHiddenPatterns(
     if (pct >= 3) {
       patterns.push({
         kind: "outlier",
-        title: `${pct.toFixed(1)}% of "${col.name}" values are statistical outliers`,
-        description: `About ${Math.round(outliers.length)} of ${rows.length.toLocaleString()} rows fall outside the typical range (${fmtNum(lower)} to ${fmtNum(upper)}). This usually means either data entry errors or genuinely extreme cases worth investigating.`,
+        title: includeTechnicals
+          ? `${pct.toFixed(1)}% of "${col.name}" values are statistical outliers`
+          : `${pct.toFixed(0)}% of "${col.name}" values are far outside the typical range`,
+        description: includeTechnicals
+          ? `About ${Math.round(outliers.length)} of ${rows.length.toLocaleString()} rows fall outside the typical range (${fmtNum(lower)} to ${fmtNum(upper)}). This usually means either data entry errors or genuinely extreme cases worth investigating.`
+          : `About ${Math.round(outliers.length)} of ${rows.length.toLocaleString()} rows are much higher or lower than the rest. Usually that means either a data-entry mistake or a genuinely extreme case worth a closer look.`,
         evidence: { metric: "outlier percentage", value: `${pct.toFixed(1)}%`, baseline: `${outliers.length} rows` },
         columns: [col.name],
         severity: pct > 10 ? "critical" : "notable",
@@ -646,9 +670,15 @@ function mineHiddenPatterns(
     const strength = Math.abs(corr.r) > 0.8 ? "strongly " : "";
     patterns.push({
       kind: "correlation",
-      title: `${corr.a} and ${corr.b} are ${strength}${direction} correlated (r=${corr.r.toFixed(2)})`,
-      description: `When ${corr.a} goes ${corr.r > 0 ? "up" : "down"}, ${corr.b} tends to go ${corr.r > 0 ? "up" : "down"} too. The relationship is ${Math.abs(corr.r) > 0.8 ? "strong enough" : "moderate enough"} that one can roughly predict the other. Useful for forecasting, but remember correlation isn't causation — there may be a hidden driver.`,
-      evidence: { metric: "Pearson r", value: corr.r.toFixed(2) },
+      title: includeTechnicals
+        ? `${corr.a} and ${corr.b} are ${strength}${direction} correlated (r=${corr.r.toFixed(2)})`
+        : `${corr.a} and ${corr.b} ${strength}${corr.r > 0 ? "rise" : "move in opposite directions"} together`,
+      description: includeTechnicals
+        ? `When ${corr.a} goes ${corr.r > 0 ? "up" : "down"}, ${corr.b} tends to go ${corr.r > 0 ? "up" : "down"} too. The relationship is ${Math.abs(corr.r) > 0.8 ? "strong enough" : "moderate enough"} that one can roughly predict the other. Useful for forecasting, but remember correlation isn't causation — there may be a hidden driver.`
+        : `When ${corr.a} goes ${corr.r > 0 ? "up" : "down"}, ${corr.b} tends to go ${corr.r > 0 ? "up" : "down"} too. The link is ${Math.abs(corr.r) > 0.8 ? "strong enough" : "moderate enough"} that knowing one roughly tells you the other. Useful for planning, but the link alone doesn't prove one causes the other — something else may be driving both.`,
+      evidence: includeTechnicals
+        ? { metric: "Pearson r", value: corr.r.toFixed(2) }
+        : { metric: "strength of link", value: Math.abs(corr.r) > 0.8 ? "strong" : "moderate" },
       columns: [corr.a, corr.b],
       severity: Math.abs(corr.r) > 0.85 ? "notable" : "info",
     });
@@ -679,8 +709,12 @@ function mineHiddenPatterns(
       patterns.push({
         kind: "trend",
         title: `${numCol.name} ${pctChange > 0 ? "grew" : "declined"} ${Math.abs(pctChange).toFixed(0)}% over ${dates.length} periods`,
-        description: `Across ${dates.length} time points (from ${dates[0]} to ${dates[dates.length - 1]}), ${numCol.name} moved from roughly ${fmtNum(startVal)} to ${fmtNum(endVal)}. The linear fit explains ${(r2 * 100).toFixed(0)}% of the variance — ${r2 > 0.7 ? "a strong, consistent trend" : "a real but noisy trend"}.`,
-        evidence: { metric: "percent change", value: `${pctChange > 0 ? "+" : ""}${pctChange.toFixed(0)}%`, baseline: `R²=${r2.toFixed(2)}` },
+        description: includeTechnicals
+          ? `Across ${dates.length} time points (from ${dates[0]} to ${dates[dates.length - 1]}), ${numCol.name} moved from roughly ${fmtNum(startVal)} to ${fmtNum(endVal)}. The linear fit explains ${(r2 * 100).toFixed(0)}% of the variance — ${r2 > 0.7 ? "a strong, consistent trend" : "a real but noisy trend"}.`
+          : `Across ${dates.length} time points (from ${dates[0]} to ${dates[dates.length - 1]}), ${numCol.name} moved from roughly ${fmtNum(startVal)} to ${fmtNum(endVal)}. ${r2 > 0.7 ? "The trend is strong and steady" : "The trend is real but a bit bumpy"}.`,
+        evidence: includeTechnicals
+          ? { metric: "percent change", value: `${pctChange > 0 ? "+" : ""}${pctChange.toFixed(0)}%`, baseline: `R²=${r2.toFixed(2)}` }
+          : { metric: "percent change", value: `${pctChange > 0 ? "+" : ""}${pctChange.toFixed(0)}%` },
         columns: [dateCol.name, numCol.name],
         severity: Math.abs(pctChange) > 50 ? "critical" : "notable",
       });
@@ -693,9 +727,15 @@ function mineHiddenPatterns(
     if (Math.abs(col.skew) > 1.5) {
       patterns.push({
         kind: "skew",
-        title: `"${col.name}" is ${col.skew > 0 ? "right" : "left"}-skewed (skew=${col.skew.toFixed(2)})`,
-        description: `The distribution is ${col.skew > 0 ? "pulled to the right by a few very large values" : "pulled to the left by a few very small values"}. The mean (${fmtNum(col.mean)}) is ${col.skew > 0 ? "higher" : "lower"} than the median (${fmtNum(col.median)}). For typical reporting use the median; reserve the mean for symmetric data.`,
-        evidence: { metric: "skewness", value: col.skew.toFixed(2), baseline: `mean ${fmtNum(col.mean)} vs median ${fmtNum(col.median)}` },
+        title: includeTechnicals
+          ? `"${col.name}" is ${col.skew > 0 ? "right" : "left"}-skewed (skew=${col.skew.toFixed(2)})`
+          : `"${col.name}" is lopsided toward ${col.skew > 0 ? "a few very large values" : "a few very small values"}`,
+        description: includeTechnicals
+          ? `The distribution is ${col.skew > 0 ? "pulled to the right by a few very large values" : "pulled to the left by a few very small values"}. The mean (${fmtNum(col.mean)}) is ${col.skew > 0 ? "higher" : "lower"} than the median (${fmtNum(col.median)}). For typical reporting use the median; reserve the mean for symmetric data.`
+          : `Most rows cluster around ${fmtNum(col.median)}, but a ${col.skew > 0 ? "few unusually high" : "few unusually low"} values drag the average (${fmtNum(col.mean)}) ${col.skew > 0 ? "upward" : "downward"}. For everyday reporting, the median (${fmtNum(col.median)}) is the more representative number.`,
+        evidence: includeTechnicals
+          ? { metric: "skewness", value: col.skew.toFixed(2), baseline: `mean ${fmtNum(col.mean)} vs median ${fmtNum(col.median)}` }
+          : { metric: "typical value", value: fmtNum(col.median), baseline: `average ${fmtNum(col.mean)}` },
         columns: [col.name],
         severity: "info",
       });
@@ -725,7 +765,9 @@ function mineHiddenPatterns(
       if (medianToMax > 10) {
         patterns.push({
           kind: "range_anomaly",
-          title: `"${col.name}" spans ${fmtNum(col.min)} to ${fmtNum(col.max)} — a ${Math.round(ratio).toLocaleString()}× range`,
+          title: includeTechnicals
+            ? `"${col.name}" spans ${fmtNum(col.min)} to ${fmtNum(col.max)} — a ${Math.round(ratio).toLocaleString()}× range`
+            : `"${col.name}" has values from ${fmtNum(col.min)} up to ${fmtNum(col.max)} — an unusually wide spread`,
           description: `The maximum value is ${medianToMax.toFixed(0)}× the median (${fmtNum(col.median)}). Either a small number of records are extreme outliers, or this column has mixed units/scales. Worth a spot-check before aggregating.`,
           evidence: { metric: "max/median ratio", value: `${medianToMax.toFixed(0)}×`, baseline: `range ${fmtNum(col.min)}–${fmtNum(col.max)}` },
           columns: [col.name],
@@ -743,8 +785,12 @@ function mineHiddenPatterns(
       const dominant = (sizes[0] / clusters.total) * 100;
       patterns.push({
         kind: "cluster",
-        title: `The data splits into ${clusters.k} natural groups (sizes: ${sizes.join(", ")})`,
-        description: `A quick clustering on ${clusters.features.join(", ")} found ${clusters.k} groups. The largest group holds ${dominant.toFixed(0)}% of the rows — ${dominant > 70 ? "this suggests a dominant 'typical' profile with smaller specialty segments alongside" : "the segments are fairly balanced"}. Treating these groups separately in any further analysis will reveal more than treating the dataset as one population.`,
+        title: includeTechnicals
+          ? `The data splits into ${clusters.k} natural groups (sizes: ${sizes.join(", ")})`
+          : `The data splits into ${clusters.k} natural groups`,
+        description: includeTechnicals
+          ? `A quick clustering on ${clusters.features.join(", ")} found ${clusters.k} groups. The largest group holds ${dominant.toFixed(0)}% of the rows — ${dominant > 70 ? "this suggests a dominant 'typical' profile with smaller specialty segments alongside" : "the segments are fairly balanced"}. Treating these groups separately in any further analysis will reveal more than treating the dataset as one population.`
+          : `Looking at ${clusters.features.join(", ")} together, the rows fall into ${clusters.k} natural groups. The largest group holds ${dominant.toFixed(0)}% of the rows — ${dominant > 70 ? "this points to a dominant 'typical' profile, with smaller specialty groups alongside" : "the groups are fairly balanced in size"}. Treating these groups separately will reveal more than looking at the dataset as one big pile.`,
         evidence: { metric: "dominant cluster share", value: `${dominant.toFixed(0)}%`, baseline: `${clusters.k} groups` },
         columns: clusters.features,
         severity: "info",
@@ -907,6 +953,40 @@ Output format — return ONLY this JSON shape:
 
 The "sections" array MUST include one entry per section id the user requested. If a section has no relevant findings, write a 2-sentence note saying so.`;
 
+/** Variant of the narrator system prompt for "plain English only" mode —
+ *  the user opted OUT of technical terms. The LLM must avoid statistical
+ *  jargon entirely and use everyday language. */
+const NARRATOR_SYSTEM_PLAIN = `You are the report narrator for an agentic data-analysis assistant. A statistical engine has already mined the data and produced structured findings. Your job is to turn those numbers into a clear, structured report a NON-EXPERT can act on.
+
+CRITICAL STYLE RULE — plain English only:
+- Do NOT use statistical or technical terms. The reader has no data background.
+- BANNED words: "correlation", "Pearson", "r-value", "regression", "p-value", "skew", "skewed", "kurtosis", "outlier", "IQR", "quartile", "variance", "standard deviation", "k-means", "cluster", "clustering", "heteroscedasticity", "R²", "statistical", "significance", "normal distribution", "statistically significant".
+- Use everyday equivalents instead:
+  - "correlated" → "move together" / "tend to rise together" / "tend to move in opposite directions"
+  - "outlier" → "unusual value" / "extreme value" / "value far outside the typical range"
+  - "skewed" → "lopsided" / "pulled by a few extreme values"
+  - "cluster" → "natural group" / "natural segment"
+  - "regression" / "linear fit" → "trend line" / "the overall direction"
+  - "variance" / "standard deviation" → "spread" / "how spread out the values are"
+  - "statistically significant" → "real, not just noise"
+- Lead every section with the conclusion, then back it up.
+- Use **bold** for the single most important number in each section.
+- Keep sentences short. Vary sentence length for readability.
+- Never invent numbers — use only what the engine provided. If something is missing, say "no clear pattern" instead of making one up.
+- For the executive summary, write 3-5 sentences that a busy executive could read in 20 seconds.
+- For recommendations, give 3-5 concrete next steps the user could take.
+
+Output format — return ONLY this JSON shape:
+{
+  "title": "Report title",
+  "executiveSummary": "3-5 sentence paragraph",
+  "keyMetrics": [ { "label": "Total revenue", "value": "$1.2M", "trend": "up", "hint": "vs $1.0M last period" } ],
+  "sections": [ { "id": "executive_summary", "title": "Executive Summary", "body": "Markdown paragraph(s)", "bullets": ["- short bullet", "- short bullet"] } ],
+  "recommendedQuestions": [ "What drove the spike in March?", "Who are the top 10 customers?" ]
+}
+
+The "sections" array MUST include one entry per section id the user requested. If a section has no relevant findings, write a 2-sentence note saying so.`;
+
 async function narrateReport(args: {
   state: AgentState;
   request: ReportGeneratorRequest;
@@ -919,14 +999,24 @@ async function narrateReport(args: {
   const { state, request, frame, profile, patterns, modelNarrative, requestedSections } = args;
 
   // Compact textual digest of the data + patterns.
+  // In plain-English mode (includeTechnicals === false), the digest avoids
+  // technical metric names so the LLM doesn't get tempted to use them.
+  const includeTechnicals = request.includeTechnicals;
   const columnDigest = profile.allColumns
     .slice(0, 15)
     .map((c) => {
       const parts: string[] = [`${c.name} (${c.dtype})`];
-      parts.push(`nulls ${c.nullPct.toFixed(1)}%`);
-      parts.push(`unique ${c.unique}`);
-      if (c.isNumeric) parts.push(`min ${fmtNum(c.min)} / mean ${fmtNum(c.mean)} / median ${fmtNum(c.median)} / max ${fmtNum(c.max)} (std ${fmtNum(c.std)}, skew ${c.skew?.toFixed(2)})`);
-      else if (c.topValues?.length) parts.push(`top: ${c.topValues.slice(0, 3).map((v) => `${v.value}×${v.count}`).join(", ")}`);
+      parts.push(`missing ${c.nullPct.toFixed(1)}%`);
+      parts.push(`${c.unique} unique values`);
+      if (c.isNumeric) {
+        if (includeTechnicals) {
+          parts.push(`min ${fmtNum(c.min)} / mean ${fmtNum(c.mean)} / median ${fmtNum(c.median)} / max ${fmtNum(c.max)} (std ${fmtNum(c.std)}, skew ${c.skew?.toFixed(2)})`);
+        } else {
+          parts.push(`smallest ${fmtNum(c.min)} / typical ${fmtNum(c.median)} / largest ${fmtNum(c.max)} / average ${fmtNum(c.mean)}`);
+        }
+      } else if (c.topValues?.length) {
+        parts.push(`most common: ${c.topValues.slice(0, 3).map((v) => `${v.value} (${v.count} rows)`).join(", ")}`);
+      }
       return `- ${parts.join(", ")}`;
     })
     .join("\n");
@@ -935,9 +1025,14 @@ async function narrateReport(args: {
     ? patterns.map((p, i) => `[${i + 1}] (${p.severity}) ${p.title}\n    ${p.description}\n    evidence: ${p.evidence.metric}=${p.evidence.value}${p.evidence.baseline ? ` (baseline: ${p.evidence.baseline})` : ""}`).join("\n")
     : "(no hidden patterns were detected by the mining pass)";
 
-  const correlationsDigest = profile.topCorrelations.length
-    ? profile.topCorrelations.slice(0, 5).map((c) => `${c.a} ↔ ${c.b}: r=${c.r.toFixed(2)}`).join("\n")
-    : "(no strong correlations detected)";
+  // In plain-English mode, suppress the "Strong correlations" section — it
+  // uses r-values, which are technical. The patterns digest already has
+  // plain-English versions of any strong relationships.
+  const correlationsDigest = includeTechnicals
+    ? (profile.topCorrelations.length
+        ? profile.topCorrelations.slice(0, 5).map((c) => `${c.a} ↔ ${c.b}: r=${c.r.toFixed(2)}`).join("\n")
+        : "(no strong correlations detected)")
+    : "(suppressed — see patterns digest for plain-English relationships)";
 
   const sectionList = [...requestedSections].join(", ");
 
@@ -946,6 +1041,7 @@ async function narrateReport(args: {
 Focus area chosen: ${request.focus}
 Depth chosen: ${request.depth}
 Sections requested: ${sectionList}
+${includeTechnicals ? "" : "\nSTYLE: PLAIN ENGLISH ONLY. Do not use any statistical or technical terms (no 'correlation', 'Pearson r', 'skew', 'outlier', 'regression', 'cluster', 'R²', 'p-value', etc.). Use everyday words the reader already knows."}
 
 Dataset summary:
 - ${frame.rowCount.toLocaleString()} rows × ${frame.columns.length} columns${profile.timespan ? `\n- timespan: ${profile.timespan}` : ""}
@@ -966,7 +1062,7 @@ Write the full structured report now. Return ONLY JSON.`;
   try {
     const out = await completeJson<NarratedReport>(
       [
-        { role: "system", content: NARRATOR_SYSTEM },
+        { role: "system", content: includeTechnicals ? NARRATOR_SYSTEM : NARRATOR_SYSTEM_PLAIN },
         { role: "user", content: userPrompt },
       ],
       { temperature: 0.4, maxTokens: 2400 }

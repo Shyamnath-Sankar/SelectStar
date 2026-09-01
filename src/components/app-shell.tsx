@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import { Database, Shield, ShieldAlert, RefreshCw, ListTree, Loader2, ScrollText, MessageSquare, LayoutDashboard, FileSpreadsheet, Download, ShoppingCart, Megaphone, Users, Box, Wallet, HeartPulse, GraduationCap, Truck } from "lucide-react";
 import { Logo } from "@/components/logo";
@@ -17,7 +17,6 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { TEMPLATES } from "@/lib/templates";
-import type { DataQualityCanvasObject } from "@/lib/types";
 
 const DOMAIN_ICONS: Record<string, typeof ShoppingCart> = {
   "shopping-cart": ShoppingCart,
@@ -33,59 +32,25 @@ const DOMAIN_ICONS: Record<string, typeof ShoppingCart> = {
 export function AppShell() {
   const { sessionId, schema, canWrite, zenMode, setZenMode, dialect, mode } = useSession();
   const domain = useSession((s) => s.domain);
-  const addCanvasObject = useSession((s) => s.addCanvasObject);
   const [schemaOpen, setSchemaOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  // Track whether the data-quality scan has already run for the current
-  // session. Use a ref keyed by sessionId so it auto-resets when the
-  // session changes without an extra useEffect.
-  const dqScanRef = useRef<{ sessionId: string | null; ran: boolean }>({ sessionId: null, ran: false });
   const isMobile = useIsMobile();
   const [mobileTab, setMobileTab] = useState<"chat" | "canvas">("chat");
   // Count only canvas-rendered artifacts (HITL artifacts like pending_write and
   // report_plan render inline in the chat pane, so we exclude them here).
+  // SQL canvas blocks are also excluded from the count when "Show SQL" is off
+  // (they're hidden in the canvas pane in that case).
+  const showSql = useSession((s) => s.showSql);
   const canvasCount = useSession(
-    (s) => s.canvas.filter((o) => o.type !== "pending_write" && o.type !== "report_plan").length
+    (s) => s.canvas.filter(
+      (o) =>
+        o.type !== "pending_write" &&
+        o.type !== "report_plan" &&
+        (showSql || o.type !== "sql")
+    ).length
   );
-
-  // Auto-run the data-quality scan once after a successful connect — gives
-  // the user an immediate "trust check" before they start asking questions.
-  // Fire-and-forget; never blocks the UI.
-  useEffect(() => {
-    if (!sessionId || !schema) return;
-    // Skip if we already ran for this session.
-    if (dqScanRef.current.sessionId === sessionId && dqScanRef.current.ran) return;
-    dqScanRef.current = { sessionId, ran: true };
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/data-quality/scan", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId }),
-        });
-        if (!res.ok) return;
-        const data = (await res.json()) as DataQualityCanvasObject;
-        if (cancelled || data.type !== "data_quality") return;
-        addCanvasObject(data);
-        const critical = data.issues.filter((i) => i.severity === "critical").length;
-        if (critical > 0) {
-          toast.warning(`Data quality check found ${critical} critical issue${critical === 1 ? "" : "s"} — review the canvas.`, {
-            description: `Health score: ${data.healthScore}/100`,
-          });
-        } else if (data.issues.length > 0) {
-          toast.info(`Data quality check found ${data.issues.length} minor issue${data.issues.length === 1 ? "" : "s"}. Health: ${data.healthScore}/100.`);
-        } else {
-          toast.success(`Data quality check passed — health score ${data.healthScore}/100.`);
-        }
-      } catch {
-        // Best-effort — never block the UI on the scan.
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [sessionId, schema, addCanvasObject]);
 
   const domainTemplate = domain ? TEMPLATES.find((t) => t.id === domain) : null;
   const DomainIcon = domainTemplate ? DOMAIN_ICONS[domainTemplate.icon] : null;
