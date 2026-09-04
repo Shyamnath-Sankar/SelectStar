@@ -75,3 +75,13 @@ download/*.png
 
 # Sandbox upload directory (where the user uploads files for me to read).
 upload/
+
+# Sandbox infrastructure — never commit these
+.zscripts/
+Caddyfile
+examples/
+mini-services/
+tests/
+tool-results/
+download/
+upload/
