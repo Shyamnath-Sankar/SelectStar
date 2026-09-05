@@ -29,6 +29,21 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const ALLOWED_EXT = new Set([".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xlsb", ".ods"]);
 
 export async function POST(req: NextRequest) {
+  try {
+    return await handleUpload(req);
+  } catch (e) {
+    // Unhandled errors would otherwise produce an empty 500 body, which
+    // breaks the frontend's `await res.json()` with "Unexpected end of JSON
+    // input". Catch everything here and return a proper JSON error.
+    console.error("[classic/upload] unhandled error:", e);
+    return NextResponse.json(
+      { error: `Upload failed: ${(e as Error).message || String(e)}` },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleUpload(req: NextRequest) {
   let formData: FormData;
   try {
     formData = await req.formData();
@@ -143,8 +158,24 @@ export async function POST(req: NextRequest) {
 
   // Register the first table to create the connection, then add the rest.
   const firstTable = allTables[0];
-  const schema = registerClassicDataset(session.id, firstTable, diskPaths[0]);
-  const conn = getClassicConnection(session.id)!;
+  let schema;
+  try {
+    schema = registerClassicDataset(session.id, firstTable, diskPaths[0]);
+  } catch (e) {
+    console.error("[classic/upload] registerClassicDataset failed:", e);
+    return NextResponse.json(
+      { error: `Couldn't register dataset: ${(e as Error).message}` },
+      { status: 500 }
+    );
+  }
+  const conn = getClassicConnection(session.id);
+  if (!conn) {
+    console.error("[classic/upload] getClassicConnection returned undefined after registerClassicDataset");
+    return NextResponse.json(
+      { error: "Failed to initialize the in-memory workspace. Please try again." },
+      { status: 500 }
+    );
+  }
   for (let i = 1; i < allTables.length; i++) {
     conn.addTable(allTables[i], diskPaths[Math.min(i, diskPaths.length - 1)]);
   }

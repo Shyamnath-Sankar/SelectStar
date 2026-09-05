@@ -59,10 +59,16 @@ export function parseBuffer(
     const headerRow = (aoa[0] as unknown[]).map((h, i) =>
       h === null || h === undefined || h === "" ? `column_${i + 1}` : String(h).trim()
     );
+    // Dedup column names. SQLite is CASE-INSENSITIVE for column names, so
+    // "Full Name", "full name", "FULL NAME" all collide as the same column
+    // and CREATE TABLE fails with "duplicate column name". Dedup using a
+    // case-insensitive key (and also collapse internal whitespace) so the
+    // generated CREATE TABLE never has duplicates.
     const seen = new Map<string, number>();
     const columns = headerRow.map((name) => {
-      const n = seen.get(name) ?? 0;
-      seen.set(name, n + 1);
+      const key = name.toLowerCase().replace(/\s+/g, " ");
+      const n = seen.get(key) ?? 0;
+      seen.set(key, n + 1);
       return n === 0 ? name : `${name}_${n + 1}`;
     });
 
