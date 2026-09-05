@@ -65,6 +65,10 @@ db/*.db
 db/*.db-shm
 db/*.db-wal
 
+# Classic-mode file uploads — created at runtime by /api/classic/upload.
+# Persisted on the persistent disk in production; never commit them.
+db/classic-uploads/
+
 # Sandbox dev artefacts — not part of the actual project.
 .zscripts/dev.pid
 .zscripts/dev.log
@@ -74,7 +78,8 @@ download/*.zip
 download/*.png
 
 # Sandbox upload directory (where the user uploads files for me to read).
-upload/
+# IMPORTANT: anchored to repo root so it doesn't match src/app/api/classic/upload/
+/upload/
 
 # Sandbox infrastructure — never commit these
 .zscripts/
@@ -83,5 +88,5 @@ examples/
 mini-services/
 tests/
 tool-results/
-download/
-upload/
+/download/
+/upload/
