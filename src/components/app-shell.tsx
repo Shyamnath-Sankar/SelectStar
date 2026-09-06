@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import { Database, Shield, ShieldAlert, RefreshCw, ListTree, Loader2, ScrollText, MessageSquare, LayoutDashboard, FileSpreadsheet, Download, ShoppingCart, Megaphone, Users, Box, Wallet, HeartPulse, GraduationCap, Truck } from "lucide-react";
 import { Logo } from "@/components/logo";
