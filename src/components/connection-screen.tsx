@@ -44,6 +44,9 @@ export function ConnectionScreen() {
   const [uploadingFile, setUploadingFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  // Google Sheets URL import
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [loadingSheet, setLoadingSheet] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -183,6 +186,50 @@ export function ConnectionScreen() {
     setDragActive(false);
     const files = e.dataTransfer.files;
     if (files && files.length) void handleUploadMultiple(files);
+  }
+
+  // ---- Classic mode: import Google Sheet by URL -----------------------
+  async function handleSheetImport(e?: React.FormEvent) {
+    e?.preventDefault();
+    const url = sheetUrl.trim();
+    if (!url) {
+      toast.error("Paste a Google Sheets URL first.");
+      return;
+    }
+    setLoadingSheet(true);
+    setConnectError(null);
+    try {
+      const res = await fetch("/api/classic/sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sheetUrl: url }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setConnectError(data.error || "Sheet import failed");
+        toast.error(data.error || "Sheet import failed");
+        return;
+      }
+      connect({
+        sessionId: data.sessionId,
+        mode: "classic",
+        label: data.label,
+        dialect: data.dialect,
+        schema: data.schema,
+        canWrite: true,
+        suggestedQuestions: data.suggestedQuestions,
+      });
+      if (data.domain) useSession.getState().setDomain(data.domain);
+      const tableCount = data.schema.tables.length;
+      const totalRows = data.schema.tables.reduce((s: number, t: { rowCount: number }) => s + t.rowCount, 0);
+      toast.success(`Loaded ${tableCount} ${tableCount === 1 ? "table" : "tables"} · ${totalRows.toLocaleString()} rows from Google Sheets.`);
+      setSheetUrl("");
+    } catch (e) {
+      setConnectError((e as Error).message);
+      toast.error((e as Error).message);
+    } finally {
+      setLoadingSheet(false);
+    }
   }
 
   async function reopenSession(s: RecentSession) {
@@ -464,6 +511,48 @@ export function ConnectionScreen() {
                     <div className="mt-3 text-[10px] text-muted-foreground/60">
                       .csv · .tsv · .xlsx · .xlsm · .xlsb · .ods · up to 25 MB each · multiple files supported
                     </div>
+                  </div>
+
+                  {/* Google Sheets URL import — alternative to file upload.
+                      The user pastes a share URL and we fetch the CSV via the
+                      /api/classic/sheets route. The sheet must be shared as
+                      "Anyone with the link can view". */}
+                  <div className="mt-3 rounded-xl border border-border bg-muted/30 p-3">
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground mb-1.5">
+                      <FileSpreadsheet className="h-3.5 w-3.5 text-primary" />
+                      Or import from Google Sheets
+                    </div>
+                    <form onSubmit={handleSheetImport} className="flex gap-2">
+                      <Input
+                        value={sheetUrl}
+                        onChange={(e) => setSheetUrl(e.target.value)}
+                        placeholder="https://docs.google.com/spreadsheets/d/<ID>/edit"
+                        className="font-mono text-xs h-9 flex-1"
+                        disabled={loadingSheet || uploading}
+                      />
+                      <Button
+                        type="submit"
+                        size="sm"
+                        className="h-9 gap-1.5 text-xs"
+                        disabled={loadingSheet || uploading || !sheetUrl.trim()}
+                      >
+                        {loadingSheet ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Importing…
+                          </>
+                        ) : (
+                          <>
+                            <ArrowRight className="h-3.5 w-3.5" />
+                            Import
+                          </>
+                        )}
+                      </Button>
+                    </form>
+                    <p className="mt-1.5 text-[10px] text-muted-foreground/60 leading-relaxed">
+                      Share the sheet as <span className="font-mono">Anyone with the link can view</span> first.
+                      Imports the first tab; multi-tab sheets come in as separate tables if you publish each tab.
+                    </p>
                   </div>
 
                   <AnimatePresence>
