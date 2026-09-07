@@ -90,3 +90,4 @@ tests/
 tool-results/
 /download/
 /upload/
+.env.local
