@@ -77,7 +77,7 @@ export function SpreadsheetGrid({ sessionId }: { sessionId: string }) {
   const loadTables = useCallback(async () => {
     try {
       const res = await fetch(`/api/classic/data?sessionId=${encodeURIComponent(sessionId)}`);
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "Failed to load tables");
       const tlist: TableMeta[] = d.tables || [];
       setTables(tlist);
@@ -102,7 +102,7 @@ export function SpreadsheetGrid({ sessionId }: { sessionId: string }) {
     setLoading(true);
     try {
       const res = await fetch(`/api/classic/data?sessionId=${encodeURIComponent(sessionId)}&table=${encodeURIComponent(activeTable)}&limit=1000`);
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "Failed to load data");
       setData(d);
     } catch (e) {
@@ -130,7 +130,7 @@ export function SpreadsheetGrid({ sessionId }: { sessionId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, table: activeTable, op: "setCell", rowIndex: edit.rowIndex, column: edit.column, value: edit.value }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "Edit failed");
       setData((prev) => {
         if (!prev) return prev;
@@ -154,7 +154,7 @@ export function SpreadsheetGrid({ sessionId }: { sessionId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, table: activeTable, op: "addRow" }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "Add row failed");
       await reload();
       await loadTables();
@@ -172,7 +172,7 @@ export function SpreadsheetGrid({ sessionId }: { sessionId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, table: activeTable, op: "deleteRow", rowIndex }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "Delete failed");
       await reload();
       await loadTables();
@@ -195,7 +195,7 @@ export function SpreadsheetGrid({ sessionId }: { sessionId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, table: activeTable, op: "renameColumn", oldName: renamingCol, newName }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "Rename failed");
       await reload();
       await loadTables();
@@ -214,7 +214,7 @@ export function SpreadsheetGrid({ sessionId }: { sessionId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, table: activeTable, op: "addColumn", name }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "Add column failed");
       await reload();
       await loadTables();
@@ -233,7 +233,7 @@ export function SpreadsheetGrid({ sessionId }: { sessionId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, table: activeTable, op: "deleteColumn", name }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "Delete column failed");
       await reload();
       await loadTables();

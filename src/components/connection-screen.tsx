@@ -27,6 +27,27 @@ interface RecentSession {
 }
 
 /**
+ * Safely parse a fetch Response as JSON. Returns { error } when the body is
+ * empty or isn't valid JSON — common on Render when the app is still
+ * booting up, the route crashes, or a timeout produces an empty body.
+ * Without this, `await res.json()` throws "Unexpected end of JSON input"
+ * and the user sees a raw cryptic error.
+ */
+async function safeJson<T = { error?: string; [k: string]: unknown }>(
+  res: Response
+): Promise<T> {
+  const text = await res.text();
+  if (!text || !text.trim()) {
+    return { error: `Server returned an empty response (HTTP ${res.status}). The app may still be starting up — wait a few seconds and try again.` } as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return { error: `Server returned a non-JSON response (HTTP ${res.status}). The app may be starting up or encountered an internal error.` } as T;
+  }
+}
+
+/**
  * ConnectionScreen — redesigned for a cleaner first-run experience.
  *
  * Single-column hero on top, prominent two-card mode picker below, then the
@@ -52,7 +73,7 @@ export function ConnectionScreen() {
     void (async () => {
       try {
         const res = await fetch("/api/sessions");
-        const data = await res.json();
+        const data = await safeJson<{ sessions?: RecentSession[] }>(res);
         setRecent((data.sessions || []).filter((s: RecentSession) => s.status === "connected"));
       } catch { /* ignore */ }
     })();
@@ -73,7 +94,7 @@ export function ConnectionScreen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ connectionString: connStr.trim() }),
       });
-      const data = await res.json();
+      const data = await safeJson<{ error?: string; sessionId?: string; dialect?: string; schema?: { tables: { name: string }[] }; canWrite?: boolean; suggestedQuestions?: string[]; domain?: string }>(res);
       if (!res.ok) {
         setConnectError(data.error || "Connection failed");
         toast.error(data.error || "Connection failed");
@@ -107,7 +128,7 @@ export function ConnectionScreen() {
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/classic/upload", { method: "POST", body: fd });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) {
         setConnectError(data.error || "Upload failed");
         toast.error(data.error || "Upload failed");
@@ -145,7 +166,7 @@ export function ConnectionScreen() {
       const fd = new FormData();
       for (const f of arr) fd.append("files", f);
       const res = await fetch("/api/classic/upload", { method: "POST", body: fd });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) {
         setConnectError(data.error || "Upload failed");
         toast.error(data.error || "Upload failed");
@@ -204,7 +225,7 @@ export function ConnectionScreen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sheetUrl: url }),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) {
         setConnectError(data.error || "Sheet import failed");
         toast.error(data.error || "Sheet import failed");
@@ -237,7 +258,7 @@ export function ConnectionScreen() {
     try {
       const res = await fetch(`/api/sessions/${s.id}`);
       if (!res.ok) throw new Error("Session not found");
-      const data = await res.json();
+      const data = await safeJson(res);
       loadSession({
         sessionId: data.sessionId,
         mode: data.mode === "classic" ? "classic" : "sql",

@@ -28,7 +28,7 @@ export function CanvasPendingWrite({ obj }: { obj: PendingWriteCanvasObject }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pendingId: obj.pendingId, action }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({ error: "No response from server" }));
       if (!res.ok) {
         toast.error(data.error || "Action failed");
         resolvePendingWrite(obj.pendingId, "failed", undefined, data.error);

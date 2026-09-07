@@ -84,7 +84,7 @@ export function AppShell() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Refresh failed");
       useSession.setState({ schema: data.schema, canWrite: data.canWrite, suggestedQuestions: data.suggestedQuestions });
       toast.success("Schema refreshed.");
@@ -340,7 +340,7 @@ function AuditLogList({ sessionId }: { sessionId: string }) {
     void (async () => {
       try {
         const res = await fetch(`/api/audit?sessionId=${sessionId}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (!cancelled) setLogs(data.logs || []);
       } catch {
         if (!cancelled) setLogs([]);
