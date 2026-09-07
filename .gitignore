@@ -32,10 +32,6 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-# Keep .env tracked — user explicitly wants it in the repo so Render picks
-# up the LLM_API_KEY + DATABASE_URL from the file. All other .env* variants
-# (.env.local, .env.production, etc.) are still ignored.
-!.env
 
 # vercel
 .vercel
@@ -57,37 +53,12 @@ server.log
 # Skills directory
 /skills/
 
-# SQLite binary databases (created by prisma db push + seed-demo.js).
-# The user can re-create them locally with `bun run db:push && node scripts/seed-demo.js`.
-# On Render, attach a Persistent Disk and set DATABASE_URL to an absolute
-# path on the disk (see render.yaml).
+# SQLite databases
 db/*.db
 db/*.db-shm
 db/*.db-wal
-
-# Classic-mode file uploads — created at runtime by /api/classic/upload.
-# Persisted on the persistent disk in production; never commit them.
+# Classic-mode file uploads — created at runtime by /api/classic/upload
 db/classic-uploads/
 
-# Sandbox dev artefacts — not part of the actual project.
-.zscripts/dev.pid
-.zscripts/dev.log
-
-# Build outputs / large binaries (don't bloat the repo).
-download/*.zip
-download/*.png
-
-# Sandbox upload directory (where the user uploads files for me to read).
-# IMPORTANT: anchored to repo root so it doesn't match src/app/api/classic/upload/
+# Sandbox upload directory
 /upload/
-
-# Sandbox infrastructure — never commit these
-.zscripts/
-Caddyfile
-examples/
-mini-services/
-tests/
-tool-results/
-/download/
-/upload/
-.env.local
