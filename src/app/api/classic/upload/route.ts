@@ -23,6 +23,17 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+// Explicit GET handler — returns a helpful message instead of a bare 405.
+// Some deployment platforms (Render, Vercel) return 405 Method Not Allowed
+// when a route only exports POST and receives a GET. This helps debugging.
+export async function GET() {
+  return NextResponse.json({
+    error: "This endpoint only accepts POST requests with multipart/form-data. Send a file upload via POST.",
+    method: "POST",
+    accepts: "multipart/form-data",
+  }, { status: 405, headers: { Allow: "POST" } });
+}
+
 const UPLOAD_DIR = process.env.CLASSIC_UPLOAD_DIR
   || path.join(process.cwd(), "db", "classic-uploads");
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
