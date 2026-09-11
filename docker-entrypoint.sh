@@ -29,5 +29,5 @@ if [ ! -f /app/db/demo.db ]; then
   node scripts/seed-demo.js 2>/dev/null || true
 fi
 
-echo "[entrypoint] Starting SelectStar on port ${PORT:-3000}…"
+echo "[entrypoint] Starting SelectStar on port ${PORT:-3000} (DATABASE_URL=$DATABASE_URL)…"
 exec node server.js

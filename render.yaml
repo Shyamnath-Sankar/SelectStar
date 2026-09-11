@@ -27,8 +27,10 @@ services:
         value: file:/app/db/custom.db
       - key: DEMO_DB_PATH
         value: /app/db/demo.db
-      - key: PORT
-        value: 3000
+      # NOTE: do NOT set PORT here — Render injects its own $PORT
+      # (usually 10000) and health-checks against it. Hardcoding
+      # PORT=3000 makes the app listen on the wrong port and the
+      # deploy hangs after "Starting SelectStar…".
     # Persistent disk so sessions + the app DB survive redeploys.
     # Available on the 'starter' plan and above (not 'free').
     # To use a persistent disk, upgrade plan to 'starter' and uncomment:

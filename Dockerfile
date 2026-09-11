@@ -59,10 +59,20 @@ RUN npm prune --omit=dev
 # ---- Stage 3: runner ----------------------------------------------------
 FROM node:20-slim AS runner
 
+# openssl is required so Prisma can detect the libssl version
+# (silences the "failed to detect libssl/openssl" warning).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Minimal runtime: only what the standalone server needs.
 ENV NODE_ENV=production
+# PORT default for local `docker run` without -e PORT.
+# On Render this is overridden by the platform's own $PORT —
+# do NOT add a hardcoded PORT to render.yaml (health check fails).
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 # App database (Prisma SQLite) — mount a persistent volume here on Render.
