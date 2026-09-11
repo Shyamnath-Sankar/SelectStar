@@ -24,12 +24,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy lockfile + package.json first for layer caching.
-COPY package.json bun.lock* ./
+# Copy package.json + lockfile first for layer caching.
+# NOTE: package-lock.json MUST be copied and installed with `npm ci`.
+# A floating `npm install` without the lockfile installs newer deps
+# (e.g. next 16.3.x) than the lockfile pins (next 16.2.10); combined
+# with `npm prune` later this produced an image whose compiled chunks
+# referenced APIs missing from the runtime copy — every /api route
+# returned an empty 405 at runtime.
+COPY package.json package-lock.json bun.lock* ./
 COPY prisma ./prisma
 
-# Install with npm (works everywhere; bun.lock is used for resolution info).
-RUN npm install
+# Deterministic install from the lockfile (matches local verified env).
+RUN npm ci
 
 
 # ---- Stage 2: builder ---------------------------------------------------
@@ -54,8 +60,10 @@ RUN npm run build
 # Seed the demo database so the app works out-of-the-box.
 RUN mkdir -p db && node scripts/seed-demo.js
 
-# Prune devDependencies to keep the runner image small.
-RUN npm prune --omit=dev
+# NOTE: no `npm prune` here. Pruning after the build re-resolves the
+# dependency tree and can swap versions out from under the compiled
+# output (build-time vs runtime skew). The runner copies node_modules
+# as-is; standalone tracing already keeps the needed subset.
 
 
 # ---- Stage 3: runner ----------------------------------------------------
