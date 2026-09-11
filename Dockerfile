@@ -11,7 +11,9 @@
 # ─────────────────────────────────────────────────────────────────────────
 
 # ---- Stage 1: deps ------------------------------------------------------
-FROM node:20-slim AS deps
+# NOTE: Node 22 (matches local verified env). Node 20 builds serve pages
+# but return empty 405 for every /api route handler at runtime.
+FROM node:22-slim AS deps
 
 # build-essential + python3 are needed to compile better-sqlite3's native addon.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -31,7 +33,7 @@ RUN npm install
 
 
 # ---- Stage 2: builder ---------------------------------------------------
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -57,7 +59,7 @@ RUN npm prune --omit=dev
 
 
 # ---- Stage 3: runner ----------------------------------------------------
-FROM node:20-slim AS runner
+FROM node:22-slim AS runner
 
 # openssl is required so Prisma can detect the libssl version
 # (silences the "failed to detect libssl/openssl" warning).
